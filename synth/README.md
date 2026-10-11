@@ -235,7 +235,8 @@ machine-list mark is added).
 
 **To go back** choose FLEX or STATIC (or any other machine) in either list.
 The mark is removed and the track is the plain machine again, at that
-machine's init (since 2.12: "A machine change resets the track", below). If
+machine's init (since 2.12: "A machine change resets the track's machine
+parameters", below; the locks stay). If
 the FLEX slot holds a marker file, the track still plays FM through it.
 
 **What is stored.** The machine byte is FLEX (1), so every stock FLEX path --
@@ -454,13 +455,15 @@ its own row without a site of its own, and the two modules never write the same 
 - **ANALOG BD** (octabam's `modules/analog-bassdrum`) owns the same chooser sites; the manifest declares the
   conflict so octabam names the reason.
 
-## A machine change resets the track to the new machine's init (2.12, 10 Oct 2026)
+## A machine change resets the track's machine parameters (2.12, 10 Oct 2026)
 
 The author's request: "if i change that track to be another machine, like from FM synth to SY DRUM, all the
 parameters, including any LFO settings, should be set to init. They should not inherit any parameters from the
-last machine that was on that track."
+last machine that was on that track." And (11 Oct 2026): "yes i want it to work the same way as stock, i just want
+the machine parameters to init."
 
-**A machine change resets the track to the new machine's init; the FX slots are kept.** Whenever the machine a
+**A machine change resets the track's machine parameters (PLAYBACK, PLAYBACK SETUP, AMP, LFO and their SETUP pages)
+to the new machine's init; step and scene locks are kept, as in the stock firmware; FX slots are kept.** Whenever the machine a
 track plays changes and the old or the new machine is FM SYNTH or SY DRUM -- in SELECT MACHINE TYPE, in SRC SETUP,
 or through a marker file (a FLEX track given an `FMSYNTH*` / `SYNTH*` slot in QUICK ASSIGN or the sample list, a
 marker track given a sample, a marker file loaded into or replaced in the track's FLEX slot) -- the track gets:
@@ -473,10 +476,7 @@ marker track given a sample, a marker file loaded into or replaced in the track'
 - **AMP and AMP SETUP**: ATK 0, HOLD 127, REL 127, VOL and BAL centred, XVOL 127; AMP SETUP as a new project has it
   (RTRG, SYNC ON, ATCK LIN, FX1 / FX2 ANLG, LEG OFF);
 - **the three LFOs and LFO SETUP**: SPD 32 and DEP 0 for each; PMTR the first PLAYBACK knob, WAVE TRI, MULT 1X,
-  TRIG FREE; on FM SYNTH, VOIC 1 and CHRD `----` (LFO 3's bytes);
-- **SY DRUM's step locks** of the track (LSPD LDEP WAVE S&H) removed in every pattern of the bank that plays this
-  Part: those are the patterns in which the track's machine changed (a pattern of another Part keeps its locks:
-  the track there is still whatever that Part says).
+  TRIG FREE; on FM SYNTH, VOIC 1 and CHRD `----` (LFO 3's bytes).
 
 These are the values a new project gives a track (the stock Part initialiser's, read from the OS's own page
 records at run time; nothing is copied into this repository). FX1 / FX2 -- the effects, their pages and setup --
@@ -485,7 +485,10 @@ over a track that plays FM through a marker file too). A change between two stoc
 NEIGHBOR, PICKUP) is untouched: stock keeps every page there, each machine with its own PLAYBACK page. Nothing is
 reset by loading a project, reloading or pasting a Part, or changing patterns: only a machine change does. The
 reset is written into the Part and its battery-RAM copy (SAVE keeps it) and into the track's live state, so the
-next note plays it. Stock parameter locks and trigs are the pattern's and stay (as at a stock machine change). The
+next note plays it. Locks are not machine parameters and stay, as at a stock machine change: the step locks and
+trigs are the pattern's, the scene locks the Part's, and both apply by position, so a lock recorded on one machine
+plays on the same knob position of the new one; SY DRUM's own lock rows (LSPD LDEP WAVE S&H) stay too and are heard
+again when the track returns to SY DRUM. The
 LFO designer's shapes are the Part's eight designs, which any track's WAVE can pick, so they stay; the track's
 WAVE is reset, so no design plays on it.
 
@@ -499,8 +502,8 @@ descriptor table `0x400d5f38`), AMP and LFO pages 1 and 2 from the stock AMP and
 0x5e`: page 1, `+ 0x64`: page 2 -- the tables the stock Part initialiser `0x40005638` reads; the six PMTR / WAVE and
 six MULT / TRIG bytes alternately from slots 6 / 7 and 8 / 9, as it writes them), into the Part, the battery-RAM
 shadow and the live lane (its bytes, the page-1 value words, their slew counters): the stock machine change
-(`0x400972fc`) reloads a track's lane from its Part only for PICKUP. With SY DRUM in the remix it calls
-`sd_clear_locks` (`sy-drum/sydrum.s`). The marker route: the slot assigner's hook (`po_assign`) asks `ml_became`
+(`0x400972fc`) reloads a track's lane from its Part only for PICKUP. It writes no pattern data and no scene: the
+locks are untouched. The marker route: the slot assigner's hook (`po_assign`) asks `ml_became`
 (the machine before and after the slot write, `ml_kindof`); the file browser's hook (`po_loadsel`) resets every
 FLEX track on the slot whose file went from a sample to a marker or back (a track chosen in the list keeps its
 machine whatever its slot holds) and marks the Part edited as stock's machine write does. The browser unloads
