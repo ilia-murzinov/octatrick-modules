@@ -1,6 +1,6 @@
 # Synth machine (phase 5: paraphonic chords, the engine in DRAM; phase 4: glide; phase 3: the page; phase 2: the FM voice; phase 1: the hollow voice)
 
-**Octatrick 2.12 (not tagged yet; 10 Oct 2026): the metronome no longer
+**Octatrick 2.12 (tag `v2.12`; 10 - 11 Oct 2026): the metronome no longer
 releases a held note.** With the metronome on and the sequencer playing, a held
 CHROMATIC key or chord on a synth track was released at the next click as if it
 had been let go (at REL INF: cut within 5 ms), and every sequencer note was
@@ -12,9 +12,14 @@ notes were measured at the same level (a grid trig, a held key and a
 live-recorded trig of the same note at the same VOIC); what makes steps sound
 softer -- HOLD, VOIC, the same pitch repeated at VOIC 2..4 -- is in "Grid steps
 and live keys: the same level (2.12)" under "6 dB of headroom"; no level
-changed.
+changed. **And a machine change resets the track's machine parameters to
+init:** a machine change to or from FM SYNTH / SY DRUM (either list, or a
+marker file) resets the track's PLAYBACK, PLAYBACK SETUP, AMP, LFO and their
+SETUP pages to the new machine's init; step and scene locks are kept, as in
+the stock firmware; FX slots are kept. Details: "A machine change resets the
+track's machine parameters (2.12)" below.
 
-**Octatrick 2.10 (not tagged yet; 5 - 8 Oct 2026).** **FM SYNTH is in the
+**Octatrick 2.10 (tag `v2.10`; 5 - 8 Oct 2026).** **FM SYNTH is in the
 machine list** (8 Oct): the sixth row of SRC SETUP (FUNC + SRC) and of SELECT
 MACHINE TYPE on every track, playing with no sample and no marker file -- see
 "Selecting FM SYNTH from the machine list (2.10)" below (adapted from

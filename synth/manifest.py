@@ -300,8 +300,8 @@ ml_reset). To or from FM SYNTH / SY DRUM -- through the lists (fm_choose), the
 slot assigner (po_assign -> ml_became) or the file browser (po_loadsel) -- the
 track's PLAYBACK and SETUP, AMP and AMP SETUP, LFO page and LFO SETUP take the
 new machine's init (a stock machine's: the stock page descriptors' defaults, as
-the stock Part initialiser writes them), and SY DRUM's step locks of the track
-go; FX1 / FX2 stay. The browser's select unloads the slot (0x40025288 clears its
+the stock Part initialiser writes them); step and scene locks are kept, as in
+the stock firmware (SY DRUM's lock rows too); FX1 / FX2 stay. The browser's select unloads the slot (0x40025288 clears its
 settings record) before the path write -- twice: the browser's load callback
 0x400226f4 unloads it, then calls the select, which unloads it again -- so the
 file the slot had is read at the callback's call: one more jsr detour,

@@ -43,8 +43,8 @@
 |
 | THE MACHINE CHANGE (2.12). A change of the machine a track plays, where the old or the
 | new machine is a row's (FM SYNTH, SY DRUM), sets the track to the new machine's init:
-| PLAYBACK and its SETUP, AMP and AMP SETUP, the three LFOs and LFO SETUP, SY DRUM's step
-| locks; the FX1 / FX2 slots stay (ml_reset). Through either list (fm_choose) and through
+| PLAYBACK and its SETUP, AMP and AMP SETUP, the three LFOs and LFO SETUP; step and scene
+| locks (SY DRUM's lock rows too) and the FX1 / FX2 slots stay (ml_reset). Through either list (fm_choose) and through
 | a marker file (poly.s: the slot assigner and the file browser, ml_became / ml_reset). A
 | change between two stock machines is stock's (nothing written); a project, a Part
 | reload, a paste or a pattern change is no change (the bytes saved are the bytes played).
@@ -120,8 +120,8 @@
 | with the one it plays after it (the row's engine kind; a stock row: 0, or 1 for FLEX
 | whose FLEX slot holds a marker file). When they differ and either is one of the rows'
 | machines, the track gets the new machine's init (ml_reset): its PLAYBACK and PLAYBACK
-| SETUP bytes, the AMP and AMP SETUP pages, the three LFOs and LFO SETUP, the SY DRUM step
-| locks; the FX1 / FX2 slots are kept. The same machine again keeps the patch (a track that
+| SETUP bytes, the AMP and AMP SETUP pages, the three LFOs and LFO SETUP; the step and scene
+| locks (SY DRUM's lock rows too) and the FX1 / FX2 slots are kept. The same machine again keeps the patch (a track that
 | plays the FM voice through a marker file keeps it when FM SYNTH is chosen over it). A
 | change between stock machines writes nothing here (stock's own behaviour: each machine
 | keeps its PLAYBACK column, every other page stays).
