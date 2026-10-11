@@ -7,7 +7,12 @@ had been let go (at REL INF: cut within 5 ms), and every sequencer note was
 released at the next click too. The engine had hooked the metronome's click
 word, taking it for the sequencer's STOP word (2.9's `po_stop`); the hook is
 gone, and STOP still ends the voices at the stock voice kill. Details: "The
-metronome no longer releases a held note (2.12)" below.
+metronome no longer releases a held note (2.12)" below. Grid steps and played
+notes were measured at the same level (a grid trig, a held key and a
+live-recorded trig of the same note at the same VOIC); what makes steps sound
+softer -- HOLD, VOIC, the same pitch repeated at VOIC 2..4 -- is in "Grid steps
+and live keys: the same level (2.12)" under "6 dB of headroom"; no level
+changed.
 
 **Octatrick 2.10 (not tagged yet; 5 - 8 Oct 2026).** **FM SYNTH is in the
 machine list** (8 Oct): the sixth row of SRC SETUP (FUNC + SRC) and of SELECT
@@ -595,6 +600,62 @@ PC-relative form assembles to the same encoding).
   1,251, peak 2,658 -> 2,690) and +64 at VOIC 4 (4,130 -> 4,194, peak 6,492 ->
   6,556): one instruction a sample per voice. `poly.s` assembles at
   `-mcpu=5475` and `-mcpu=54455`, 20,976 -> 20,980 B.
+
+### Grid steps and live keys: the same level (2.12, 10 Oct 2026)
+
+**What the author heard** (the same test of 2.11): played live the synth was
+loud enough, but steps entered in GRID RECORDING played back "much softer".
+Later he could not hear the drop on either test image.
+
+**The engine plays a step and a played note at the same level.** Measured on
+the pinned ot_emu (DSP lockstep, track 1's own stem; this image; T1 = FM
+SYNTH C4, RATO 2.00 INDX 60 DEC HOLD; the same Part for every case): RMS and
+sample peak over +20..300 ms after the note starts, dBFS --
+
+| the note | VOIC 1 | VOIC 4 |
+|---|---|---|
+| a CHROMATIC key held | -29.45 / -26.82 | -35.47 / -32.83 |
+| a grid trig (step 1, no lock) | -29.45 / -26.82 | -35.47 / -32.83 |
+| a live-recorded trig played back (the take: the key held 0.5 s in REC + PLAY) | -29.44 / -26.82 | -35.47 / -32.83 |
+
+(AMP HOLD INF, REL INF or REL 60; the recorded rows at REL 60, so no release
+tail of the previous loop sounds beside them.) The 10 ms RMS at +10 / 50 /
+100 / 200 / 300 / 500 / 1000 / 1500 ms agrees within 0.13 dB between the key,
+the trig and the recorded trig -- the spread of 10 ms windows on the steady
+tone itself. Nothing on the trig path
+carries a level: a trig has no velocity, `po_retrig` changes only the START
+byte's form, and the AMP envelope, the index, VOIC and the 6 dB headroom are
+read from the same live lane for both. So no level changes in 2.12.
+
+**What makes steps sound softer than played notes** -- each by design, and
+each a setting:
+
+1. **The metronome (2.11 only)**: every sequencer note was released at the
+   next click -- fixed in 2.12 ("The metronome no longer releases a held note
+   (2.12)").
+2. **HOLD**: a sequencer trig is gated by AMP HOLD, a held key is not (2.10's
+   rule, "A held key is the gate"). At HOLD 14 (one step) REL 98 a grid note is
+   at 0 dB to +100 ms, then -0.7 (+200 ms), -1.7 (+300), -3.6 (+500), -8.4 dB
+   (+1000), while a held key stays at 0 dB. A live-recorded trig carries the
+   played length as its HOLD lock and plays back as the key did. For steps that
+   last like held keys: HOLD 127 (INF), a longer HOLD, or HOLD locks. (The
+   first trig of a session still ignores HOLD, an older finding.)
+3. **VOIC**: each paraphonic voice is 1 / sqrt(VOIC) of the mono voice, so a
+   single step at VOIC 4 (-35.47 / -32.83) is 6.0 dB RMS and 11.85 dB peak below
+   four keys held as a chord on the same track (-29.45 / -20.98). For single
+   notes on a chord track: VOIC 1, or CHRD locks on the steps.
+4. **The same pitch again at VOIC 2..4**: a new note starts cold on a free voice
+   beside the previous note's release tail (keys and trigs alike), so the two
+   sum at whatever phase they meet. At 120 BPM, C4, AMP HOLD 14 REL 98, VOIC 4:
+   a grid trig on every beat summed to -30.5 .. -31.5 dBFS RMS (the regular
+   grid met the tail near in phase), live taps of about the same length every
+   ~0.52 s to -35.3 .. -38.4 (a lone tap of that length: -35.9), and a
+   live-recorded note played back over its previous loop's tail read +0.4 and
+   +1.3 dB against its take; another tempo or pitch can make the grid's sum
+   the quieter one. At VOIC 1 the same repeats continue the sounding voice
+   (phase-continuous): -29.94 for trigs and taps alike. Taking a releasing
+   voice of the same pitch warm instead would make repeats even; it changes
+   every VOIC 2..4 retrigger and is left as a design decision.
 
 ---
 

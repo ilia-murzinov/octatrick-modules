@@ -228,9 +228,16 @@ builds on the author's unit and were never tagged.
   sequencer note at the first click after it. Since 2.9 the engine had hooked
   the metronome's click word, taking it for a STOP word; the hook is gone,
   0x4000b2c8 is stock, the click still sounds, and STOP still ends the voices
-  at the stock voice kill. Everything else plays as on 2.11 (the FM harnesses'
-  PCM, the click cards, SY DRUM's renders and the machine-list walks are
-  unchanged). Emulator-verified, not yet on hardware.
+  at the stock voice kill. GRID STEPS AND PLAYED NOTES, THE SAME LEVEL: a grid
+  trig, a held key and a live-recorded trig of the same note at the same VOIC
+  were measured equal (within 0.01 dB RMS and peak); steps sound softer only
+  through AMP HOLD (it gates sequencer trigs, not held keys), VOIC (a voice is
+  1 / sqrt(VOIC) of the mono voice, so a single step at VOIC 4 is 6 dB below a
+  played four-note chord) or a same-pitch repeat at VOIC 2..4 summing with its
+  own release tail -- explained in synth/README.md, no level changed.
+  Everything else plays as on 2.11 (the FM harnesses' PCM, the click cards,
+  SY DRUM's renders and the machine-list walks are unchanged).
+  Emulator-verified, not yet on hardware.
 - 2.11 (tag `v2.11`, 9 Oct 2026): two new modules and the machine list
   they share. THE MACHINE LIST for more than one machine: the rows after
   PICKUP are a table filled per remix (FM SYNTH, then SY DRUM), the six
