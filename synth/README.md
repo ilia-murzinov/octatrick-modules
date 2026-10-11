@@ -1,5 +1,14 @@
 # Synth machine (phase 5: paraphonic chords, the engine in DRAM; phase 4: glide; phase 3: the page; phase 2: the FM voice; phase 1: the hollow voice)
 
+**Octatrick 2.12 (not tagged yet; 10 Oct 2026): the metronome no longer
+releases a held note.** With the metronome on and the sequencer playing, a held
+CHROMATIC key or chord on a synth track was released at the next click as if it
+had been let go (at REL INF: cut within 5 ms), and every sequencer note was
+released at the next click too. The engine had hooked the metronome's click
+word, taking it for the sequencer's STOP word (2.9's `po_stop`); the hook is
+gone, and STOP still ends the voices at the stock voice kill. Details: "The
+metronome no longer releases a held note (2.12)" below.
+
 **Octatrick 2.10 (not tagged yet; 5 - 8 Oct 2026).** **FM SYNTH is in the
 machine list** (8 Oct): the sixth row of SRC SETUP (FUNC + SRC) and of SELECT
 MACHINE TYPE on every track, playing with no sample and no marker file -- see
@@ -208,6 +217,78 @@ repository. Each section states its method (the build, the emulator mode,
 the card and the settings) and its numbers.
 
 ---
+
+## The metronome no longer releases a held note (2.12, 10 Oct 2026)
+
+**What the author heard** (his MKI, the 2.11 engine as Modwerk's FM Synth
+0.1.4): with the metronome playing, a held note or chord was cut as if it had
+been released while the keys were still down.
+
+**The cause.** BUILD 32 (2.9) added `po_stop`, a detour at the frame
+builder's `clrl 0x46c80350` (0x4000b2c8), on the reading that the global
+mailbox word 0x46c80350 was the sequencer's STOP / restart word and the byte
+the builder posts from it (0x46104d14) the DSP's all-off. Both are the
+METRONOME's. While the sequencer plays, the beat code writes the word -- 3 on
+the first beat of each bar (0x4009c3a0 at PLAY, 0x400a4d8c), 1 on the other
+beats (0x400a4d96); 0x4009bbb8 / 0x4009c3aa are the transport-start forms --
+and every writer sits behind `tst.b 0x80000060`, the project's
+METRONOME_ENABLED (parsed at 0x40087c20, edited in PROJECT > CONTROL >
+METRONOME). The frame builder turns a nonzero word into the DSP-wide command
+byte 0x46104d14 = 0x10 | [0x80001810] (0x30 | .. on the accent) -- the click --
+and clears the word at 0x4000b2c8. So `po_stop` ran at every click and at
+nothing else (BUILD 33 measured that it never ran at a STOP: the metronome was
+off on that rig). At every click it set S_ON bit 1 (released) and bit 2
+(STOPPED: REL INF takes the 1 ms floor) on every synth track, moved every
+sounding paraphonic voice to its release and dropped the notes waiting for a
+fading voice -- with the keys still held. A held key or chord was released at
+the next beat through the lane's REL (at REL INF cut within 5 ms), and every
+sequencer note was released at the first beat after it. SY DRUM tracks (the
+same engine record) were released the same way.
+
+**The fix.** `po_stop` and its detour are removed: 0x4000b2c8 is stock again
+and the engine no longer touches the metronome's word (`GLOBAL_WORD` in
+`poly.s` is documented as the click word). STOP, a pattern change and the
+loaders end the engine's voices where they have since BUILD 33, at the stock
+VOICE KILL (`po_kill`, which also drops the waiting notes). Nothing sets S_ON
+bit 2 any more, so its two readers (`po_mono_env`'s and `po_frame`'s REL INF
+floor) never fire; they are left in place. The DRAM unit shrinks 20,980 ->
+20,860 B; every other instruction is unchanged (the two disassemblies differ
+only in addresses).
+
+**Measured** (the pinned ot_emu, DSP lockstep, the stream in TRACKS mode so
+track 1's own stem is measured without the click; the v2.11 FM-only octabam
+image against the same build of this change; T1 = FM SYNTH, C4, RATO 2.00
+INDX 60 DEC HOLD; 120 BPM, the sequencer playing; the CHROMATIC key C4, or C3
+E3 G3 C4, held 9.1 s = 18 beats; the metronome on (MAIN 64, CUE 64) or off):
+
+| held, AMP | 2.11, metronome on | 2.12, metronome on |
+|---|---|---|
+| key, VOIC 1, ATK 0 HOLD 14 REL 98 | released at the first click (S_ON 1 -> 7, `po_stop` 24 times in the session): -30.0 dBFS in the first 0.5 s, -47.0 at 2 s, silent from 4 s with the key down | S_ON 1 and S_GAIN full throughout, -29.45 dBFS to the key-up; the stem identical sample for sample to the metronome-off render |
+| key, VOIC 1, HOLD INF REL INF | cut to silence at the first click | identical to metronome off |
+| chord, VOIC 4, HOLD 14 REL 98 | all four voices released at the first click, silent from 4 s | four voices sounding throughout; identical to metronome off |
+
+The click still sounds: the main mix minus the metronome-off render holds one
+click per beat (18 in the 9.1 s, -12.0 dBFS peak); the frame builder posted
+the click command at each of the session's 24 beats (0x10 | n at 0x4000b2ac;
+on the 6 accents 0x30 | n at 0x4000b2c2) and its stock clear at 0x4000b2c8 ran
+24 times.
+Grid notes with the metronome on (HOLD INF REL INF): 2.11 released each at the
+next click (-2.6 dB at +500 ms, silent at +1 s); 2.12 holds them at 0 dB for
+the whole 2 s loop, as with the metronome off. STOP, with the metronome on and
+off: a held REL INF key, or a HOLD INF grid note, sounds until the stock voice
+kill 0.74 s after the press (the rig's stop timing, 0.75 s on 2.11); at the
+kill S_ON, S_GAIN and S_GPREV are 0, the stem stays below -69 dBFS after it,
+and the next key starts cold (S_GPREV 0 before its START).
+
+Unchanged: Modwerk's synth harnesses (`gate.cpp`, `lfo_regression.cpp`) pass
+with the PCM and state identical to 2.11's and the same cost; the note-start
+click cards of 2.10 (the onset splatter per note, nine cards) read the same on
+both images within 0.1 dB, and the 2.10 author's-test cards (taps, runs,
+sequencer and live-recorded phrases at VOIC 1 and 4) find no onset at +10 dB
+or more on either; five SY DRUM renders (the DEC, LFO, PTCH and lock cards)
+are identical sample for sample; the machine-list walks (FM SYNTH alone, FM
+SYNTH and SY DRUM, the chooser) and a Part save / reload walk are
+pixel-identical with every peeked byte equal.
 
 ## Selecting FM SYNTH from the machine list (2.10, 8 Oct 2026)
 
@@ -589,10 +670,12 @@ sequencer trig as before; a finite HOLD ends by the engine's own timer; and
 STOP, a pattern change, a slot or project change and the sample preview stop
 all end a stock voice HARD through the one VOICE KILL `0x40006820(t)`, whose
 CF voice-byte clear carries `po_kill` (BUILD 33, below): the killed track's
-engine voices end at that instant. `po_stop` at 0x4000b2c8 (the frame
-builder's `clrl 0x46c80350`, after it turns the sequencer's STOP word into the
-DSP-wide all-off command) stays as belt-and-braces for a STOP that posts the
-word without a kill. Mute stays the DSP's output mute.
+engine voices end at that instant. (Until 2.11 `po_stop` at 0x4000b2c8, the
+frame builder's `clrl 0x46c80350`, was kept as belt-and-braces for "a STOP that
+posts the word without a kill"; that word is the metronome's click, so
+`po_stop` released every voice at every click -- removed in 2.12, see "The
+metronome no longer releases a held note (2.12)".) Mute stays the DSP's output
+mute.
 
 **Voice stealing / chord memory**: state 3, a fade of T_GMAX / 8 a frame (8
 frames, 2.9 ms; `po_fr_cut`), then freed -- it was one frame. A voice the new
@@ -630,7 +713,9 @@ voices (`po_free`: state 0, `V_GAIN` / `V_GPREV` 0) and clears their `V_KEY` /
 `V_HOLD`. The DSP voice is dead at that instant, so the immediate zero is
 inaudible, and the next START is cold (`sy_cold`: `S_GPREV == 0` -> phase 0
 from 0). A sample track's record is zeroed the same way (nothing of ours was
-on). `po_stop` (0x4000b2c8) is kept as belt-and-braces: S_ON bit 2 (STOPPED)
+on). [2.12: the next paragraph's `po_stop` is removed -- the global word is the
+metronome's click word and `[0x80000060]` is METRONOME_ENABLED, see "The
+metronome no longer releases a held note (2.12)".] `po_stop` (0x4000b2c8) is kept as belt-and-braces: S_ON bit 2 (STOPPED)
 with the released flag on every synth track, so the mono release
 (`po_mono_env`) and the paraphonic `T_RK` take `po_relk[0]` (tau 1 ms) where
 REL is INF -- on a killed track it finds S_ON 0 and does nothing; it only
@@ -1332,7 +1417,7 @@ same kind of splatter.
    the fade has ended: the note waits in `po_pend` (8 tracks x 4 voices x 16
    bytes: state, key, root, gate; `po_pfix` writes it, `po_pstart` starts it
    from `po_frame` where the voice is freed; a key or MIDI note gone in the
-   meantime releases at once; `po_free`, `po_fade`, `po_stop`, a steal,
+   meantime releases at once; `po_free`, `po_fade`, a steal,
    `po_carry` and the legato hand-over drop it; `po_start` folds PTCH moves
    into it). Before any of that, `po_pmatch` gives a new note the fading voice
    already at its pitch (a chord's common tones keep their voices, warm, as one
@@ -1482,7 +1567,9 @@ note, as since 2 Oct; a paraphonic chord's voices release with their keys).
 A sequencer trig is gated by HOLD as before (the timer from the START; 127 =
 INF), and so is a MIDI note (its note-off releases it earlier, as before). A
 key let go before its START reached the engine is treated as a trig (HOLD).
-STOP ends every voice as before. The live recorder is untouched: the played
+STOP ends every voice as before. (Until 2.12 every metronome click released a
+held key too, by mistake: "The metronome no longer releases a held note
+(2.12)".) The live recorder is untouched: the played
 length still becomes the recorded step's HOLD (the quantizer's hold /
 release rule), so the recorded note plays back for the length it was held.
 

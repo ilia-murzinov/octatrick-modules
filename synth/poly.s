@@ -63,9 +63,9 @@
 |     period, S-shaped, po_alaw); HOLD a timer from the START,
 |     po_hold128 x frames a step (127 = INF), the note ends by itself; REL
 |     exponential, tau = 0.295 ms x 2^(v/8.53) floored at 1 ms (po_relk), 127
-|     = INF: the voice sustains until stolen -- except after STOP (po_stop:
-|     S_ON bit 2), when INF takes the 1 ms floor so every voice reaches
-|     silence and the next START is cold. A start while the voice still
+|     = INF: the voice sustains until stolen or until STOP / a pattern
+|     change ends it at the stock voice kill (po_kill: silent, the next
+|     START is cold). A start while the voice still
 |     sounds continues it phase-continuously from its level (the START rule);
 |   * PITCH per voice: target = V_ROOT + (PTCH word - the word at the last
 |     start), so a lock or slide or LFO on PTCH moves every voice by the
@@ -147,7 +147,7 @@
         .global sy_render, po_lfo3, po_lfo3b, po_lfopage
         .global po_mon, po_moff, po_mgate, po_mogate, po_mrec, po_mtrig
         .global po_ampstage, po_ampdraw1, po_ampdraw2, po_ampdraw3, po_ampedit, po_amplane
-        .global po_assign, po_machwin, po_machlist, po_loadsel, po_stop, po_kill
+        .global po_assign, po_machwin, po_machlist, po_loadsel, po_kill
         .global po_retrig
         .global po_fmsource, po_fmstart  | the FM SYNTH machine (machine.s): the source supplier and the START callback
         .global po_is_synth, po_sig      | ... and its tests (machine.s: the chooser's commits, the row lookups, the Part validator)
@@ -212,14 +212,19 @@
         .set    CV_ATK, 12               | flat slot 12 = AMP page slot 0 (ATK)
         .set    CUT_SHIFT, 3             | a stolen voice fades over 8 frames (2.9 ms): T_GMAX / 8 a frame (plan B) -- 2.10: at least one
                                          | period of the voice, S-shaped (po_alaw from po_fr_cut / po_fade_frame)
-        .set    GLOBAL_WORD, 0x46c80350  | the sequencer's STOP / restart word the frame builder turns into the DSP all-off (po_stop)
+        .set    GLOBAL_WORD, 0x46c80350  | the METRONOME's click word, not a STOP word (2.12): the beat code writes 3 (the bar's first
+                                         | beat, the accent) or 1 (the other beats) while the sequencer plays, every writer behind
+                                         | METRONOME_ENABLED (0x80000060); the frame builder turns it into the DSP-wide click command
+                                         | 0x46104d14 (0x10 | .., 0x30 | .. the accent) at 0x4000b292..0x4000b2c2 and clears it at
+                                         | 0x4000b2c8. 2.9..2.11 hooked that clear (po_stop) as a STOP and released every engine voice
+                                         | at every click; nothing of ours reads or hooks it since 2.12 (STOP is po_kill's)
         .set    KILL_RET, 0x40006862     | the stock VOICE KILL 0x40006820: after its CF voice-byte clear (po_kill)
 | ---- the per-track record, 128 bytes: the mono voice (0..43, synth.s's layout) and the poly frame
 | (ST_STRIDE, S_GAIN +24, S_ON +36, S_GPREV +38 are in engine_abi.inc: SY DRUM shares them. S_ON
 | bit 0: the playing voice is a synth; bit 1: a release (the AMP release, mailbox 0x40) reached the
 | frame builder since that START (po_rel; BUILD 27) -- tst.b still means "a synth plays": bits 1 / 2
-| are set only while bit 0 is; bit 2: STOPPED (po_stop, BUILD 32): a release under REL INF takes the
-| 1 ms floor. S_GPREV, a word: the gain the last rendered call ended at -- sy_loop ramps S_GPREV ->
+| are set only while bit 0 is; bit 2: STOPPED (BUILD 32's po_stop, removed in 2.12: nothing sets it
+| now, so its two readers -- po_mono_env's and po_frame's REL INF floor -- never fire). S_GPREV, a word: the gain the last rendered call ended at -- sy_loop ramps S_GPREV ->
 | S_GAIN across the call; every start clears it with the phases, BUILD 26.)
         .set    S_PHC, 0                 | carrier phase, Q32 cycles
         .set    S_PHM, 4                 | modulator phase
@@ -777,8 +782,8 @@ sy_il_done:
 | bytes (CURVALS + 72 t + 12 / 13 / 14: locks, scenes and LFOs applied by the frame
 | builder before the render loop) with the DSP's own laws as measured (stage 1):
 |   RELEASING (S_ON bit 1: po_rel for every note-off path -- the panel key's
-|     release, MIDI note-off, the sequencer's -- or the HOLD timer below, or
-|     po_stop): gain -= gain * k, k = po_relk[REL] (Q16 a frame: tau = 0.295 ms x
+|     release, MIDI note-off, the sequencer's -- or the HOLD timer below):
+|     gain -= gain * k, k = po_relk[REL] (Q16 a frame: tau = 0.295 ms x
 |     2^(REL / 8.53), at least 1 ms -- Tim's ~2 ms minimum fade even at REL 0;
 |     127 = INF, holds); a step below 1 still makes progress; at or under 64
 |     (-54 dB) the voice is silent (0; its next START is cold).
@@ -836,8 +841,8 @@ po_me_rel:
         lea     po_relk(%pc),%a0
         mvz.w   (%a0,%d0.l*2),%d0        | k, Q16 (0 = INF)
         bne     po_me_rel0
-        btst    #2,S_ON(%a3)             | INF holds -- unless STOPPED (po_stop): the floor, tau 1 ms, so the
-        beq     po_me_store              | voice reaches silence and the next START is cold (BUILD 32)
+        btst    #2,S_ON(%a3)             | INF holds -- unless STOPPED (BUILD 32): the floor, tau 1 ms. Since 2.12
+        beq     po_me_store              | nothing sets bit 2 (po_stop removed): INF always holds here
         mvz.w   (%a0),%d0                | po_relk[0]
 po_me_rel0:
         move.l  %d1,%a0
@@ -1542,8 +1547,8 @@ po_fr_dk:
         lea     po_relk(%pc),%a1
         mvz.w   (%a1,%d0.l*2),%d0
         bne     po_fr_rk
-        btst    #2,S_ON(%a5)             | REL INF, STOPPED (po_stop): the floor, tau 1 ms -- every releasing
-        beq     po_fr_rk                 | voice reaches silence under the DSP's all-off (BUILD 32)
+        btst    #2,S_ON(%a5)             | REL INF, STOPPED (BUILD 32): the floor, tau 1 ms. Since 2.12 nothing
+        beq     po_fr_rk                 | sets bit 2 (po_stop removed): INF always holds here
         mvz.w   (%a1),%d0
 po_fr_rk:
         move.l  %d0,T_RK(%a5)
@@ -5170,51 +5175,13 @@ po_retrig_out:
         move.b  (%a0,%a1.l),%d0          | displaced: the byte (rewritten or not) for the packer's nibble byte
         jmp     0x4000c63c
 
-| ---- po_stop: 0x4000b2c8, the frame builder's `clrl 0x46c80350` (6 bytes) -- the
-| sequencer's STOP / restart word (3, or 1) consumed: the builder has just turned
-| it into the DSP-wide all-off command byte (0x10 / 0x30 into 0x46104d14), with no
-| per-track mailbox and no CF voice kill (stage 1). The DSP's envelope no longer
-| ends anything (plan B), so the engine ends everything here: every synth track's
-| mono voice takes the released flag (S_ON bit 1 -> po_mono_env's release) and
-| every sounding paraphonic voice releases (state 2 -> po_frame's release). The
-| tail fades under the DSP's all-off (inaudible) and the levels reach 0, so the
-| next START is cold. d0 is dead here (reloaded at 0x4000b2ce); a0 / d1 saved.
-po_stop:
-        clr.l   GLOBAL_WORD              | displaced
-        lea     -16(%sp),%sp
-        movem.l %d1/%d2/%a0/%a1,(%sp)
-        lea     sy_state(%pc),%a0
-        lea     po_voices(%pc),%a1
-        moveq   #8,%d1
-po_stop_t:
-        btst    #0,S_ON(%a0)
-        beq     po_stop_p
-        bset    #1,S_ON(%a0)
-        bset    #2,S_ON(%a0)             | STOPPED: REL INF releases at the 1 ms floor (po_mono_env, po_frame's T_RK)
-po_stop_p:
-        moveq   #4,%d2
-po_stop_v:
-        mvz.b   V_STATE(%a1),%d0
-        cmpi.l  #1,%d0
-        bne     po_stop_v1
-        move.b  #2,V_STATE(%a1)
-po_stop_v1:
-        lea     V_STRIDE(%a1),%a1
-        subq.l  #1,%d2
-        bne     po_stop_v
-        lea     ST_STRIDE(%a0),%a0
-        subq.l  #1,%d1
-        bne     po_stop_t
-        lea     po_pend(%pc),%a0         | (2.10) STOP: no waiting note starts after it
-        moveq   #32,%d1
-po_stop_pd:
-        clr.b   (%a0)
-        lea     16(%a0),%a0
-        subq.l  #1,%d1
-        bne     po_stop_pd
-        movem.l (%sp),%d1/%d2/%a0/%a1
-        lea     16(%sp),%sp
-        jmp     0x4000b2ce
+| ---- (2.12) po_stop is gone. 2.9..2.11 hooked the frame builder's `clrl 0x46c80350` at
+| 0x4000b2c8 as "the sequencer's STOP / restart word, after the DSP all-off" and released every
+| engine voice there (S_ON bits 1 and 2, the paraphonic voices to state 2, po_pend cleared). That
+| word is the METRONOME's click (GLOBAL_WORD above) and the byte the builder posts from it is the
+| click, not an all-off: with the metronome on, every held key and chord was released at the next
+| beat (REL INF: cut within 5 ms) while the key was still down. STOP ends the voices at the stock
+| VOICE KILL (po_kill, below; BUILD 33), which never needed the global word. 0x4000b2c8 is stock.
 
 | ---- po_kill: 0x4000685c, the stock VOICE KILL 0x40006820(t)'s CF voice-byte
 | clear `clrb %d0; moveb %d0,%a1@(0,%a0:l)` (6 bytes; BUILD 33). The kill's
@@ -5231,9 +5198,9 @@ po_stop_pd:
 | synth playing), the four paraphonic voices freed (po_free: state 0, V_GAIN /
 | V_GPREV 0) with V_KEY / V_HOLD := 0. The next START is cold (sy_cold:
 | S_GPREV == 0 -> phase 0 from 0). A sample track's record is zeroed the same
-| way (S_ON was 0 already). po_stop (0x4000b2c8) stays as belt-and-braces for a
-| STOP that posts the global word without a kill: on a killed track it finds
-| S_ON 0 and does nothing. d0 / a0 are dead here (reloaded at 0x40006862 /
+| way (S_ON was 0 already). (2.9..2.11 also hooked 0x4000b2c8 as a STOP, po_stop:
+| that site is the metronome's click, removed in 2.12; this kill is the STOP
+| path.) d0 / a0 are dead here (reloaded at 0x40006862 /
 | 0x40006866), a2 is set at 0x40006868; d1 / d2 / a1 preserved.
 po_kill:
         clr.b   %d0                      | displaced

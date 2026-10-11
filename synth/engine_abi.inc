@@ -46,7 +46,7 @@
 | ---- sy_state (poly.s): the per-track record, the fields another engine shares ----
         .set    ST_STRIDE, 128
         .set    S_GAIN, 24               | the mono voice's level, Q15 (po_mono_env: the AMP envelope)
-        .set    S_ON, 36                 | bit 0: the playing voice is an engine's; bit 1: released; bit 2: STOPPED
+        .set    S_ON, 36                 | bit 0: the playing voice is an engine's; bit 1: released; bit 2: STOPPED (unused since 2.12)
         .set    S_GPREV, 38              | word: the level the last rendered call ended at (0 = silent: cold)
 
 | ---- po_voices (poly.s): a voice record, the fields another engine shares ----

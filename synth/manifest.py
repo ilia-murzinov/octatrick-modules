@@ -132,8 +132,9 @@ conditions: a voice that still sounds (S_GPREV / V_GPREV != 0) continues the
 SAME oscillator phase-continuously from its current level (the attack re-runs
 from there); a silent one starts at phase 0 from 0. Note ends: every note-off
 path (po_rel), the HOLD timer, MIDI note-off, the key mask, the sequencer trig,
-and STOP (po_stop, a new detour at the frame builder's consumption of the
-sequencer's STOP word 0x46c80350, after it posts the DSP all-off). Voice
+and STOP (BUILD 31's po_stop, a detour at the frame builder's consumption of
+0x46c80350 taken for the sequencer's STOP word; that word is the metronome's
+click, and 2.12 removes po_stop -- see BUILD 33 and 2.12 below). Voice
 stealing and chord-memory cuts fade over 8 frames (2.9 ms, state 3). The
 per-frame peak limiter is REMOVED: the sum is clamped (saturated) only; the
 level law 1/sqrt(VOIC) is unchanged. README "The engine owns the envelope".
@@ -191,8 +192,18 @@ builder's own 0x4000d45a. po_kill is a detour at its CF voice-byte clear
 0x4000685c (interrupts masked, d1 = the track): the killed track's engine
 record ends at that instant -- S_GAIN / S_GPREV / S_HTIM / S_ON := 0, the four
 paraphonic voices freed with V_KEY / V_HOLD 0 -- so nothing of ours sounds
-after the kill and the next START is cold. po_stop stays as belt-and-braces (a
-killed track has S_ON 0: it does nothing there).
+after the kill and the next START is cold. po_stop stayed as belt-and-braces (a
+killed track has S_ON 0: it does nothing there) -- until 2.12.
+2.12 (10 Oct 2026): A HELD NOTE OR CHORD IS NO LONGER RELEASED AT EVERY METRONOME
+CLICK. The global word 0x46c80350 is the METRONOME's: while the sequencer plays,
+the beat code writes 3 (the bar's first beat) or 1 (the other beats), every writer
+behind METRONOME_ENABLED (0x80000060 -- the gate BUILD 33 saw closed on the rig),
+and the frame builder turns it into the DSP-wide click command 0x46104d14 and
+clears it at 0x4000b2c8. po_stop, hooked at that clear, therefore ran at every
+click and nowhere else: every synth track's mono voice took the released flag and
+STOPPED (REL INF: cut within 5 ms), every sounding paraphonic voice released, while
+the keys were still held. The detour and po_stop are removed; 0x4000b2c8 is
+stock; STOP stays po_kill's (above).
 History, BUILD 27: WARM ONLY WHEN THE DSP IS PROVABLY SUSTAINING AT FULL -- BUILD 26's
 cold start made a new key while the old note still sounds (LEG OFF, HOLD INF) a
 hard cut at the frame edge (a -12 dB 5 ms click). sy_cold keeps the phases and
@@ -367,8 +378,6 @@ MIDI_GATE_HOOK = 0x4000e452              # `movel %d6,%d0; subql #2,%d0; moveq #
 MIDI_GATE_STOCK = bytes.fromhex("2006" "5580" "7405" "b480")
 RETRIG_HOOK = 0x4000c634                 # the frame builder's per-track copy of the DSP command byte 0x46104d15[t] into the packer's nibble byte 0x46104d0c[t]: `moveal 114(sp),a1; moveb (a0,a1.l),d0` (a0 = 0x46104d15; BUILD 37: po_retrig turns a sequencer START on a sounding synth voice, 0x10 | n, into the key's clean 0x30)
 RETRIG_STOCK = bytes.fromhex("226f0072" "10309800")
-STOP_HOOK = 0x4000b2c8                   # `clrl 0x46c80350` (the frame builder consumes the sequencer's STOP / restart word after posting the DSP all-off; plan B: po_stop ends every engine voice)
-STOP_STOCK = bytes.fromhex("42b9" "46c80350")
 KILL_HOOK = 0x4000685c                   # the stock VOICE KILL 0x40006820(t): `clrb %d0; moveb %d0,%a1@(0,%a0:l)`, the CF voice byte 0x800049d8 + 168 t := 0, interrupts masked; d1 = t (BUILD 33: po_kill ends the engine's voices of the track at that instant)
 KILL_STOCK = bytes.fromhex("4200" "13808800")
 REL_HOOK = 0x4000b51a                    # `moveal %sp@(114),%a3; movel %a1@(0,%a3:l:4),%d0` (the frame builder's AMP-release consumer, mailbox bit 6: every note-off path)
@@ -651,9 +660,6 @@ MODULE = Module(
         Detour(REL_HOOK, REL_STOCK, "poly", "po_rel",
                "the frame builder's AMP-release consumer (mailbox 0x40, every note-off path): a synth voice takes the released flag -- plan B: the engine's own release starts (po_mono_env)",
                kind="jmp", pad_to=8),
-        Detour(STOP_HOOK, STOP_STOCK, "poly", "po_stop",
-               "the frame builder's STOP / restart word consumer (after the DSP all-off): every engine voice releases (plan B: the DSP's envelope ends nothing, so no note may stick)",
-               kind="jmp"),
         Detour(RETRIG_HOOK, RETRIG_STOCK, "poly", "po_retrig",
                "the frame builder's copy of the DSP command byte into the packer's nibble byte (every START form's funnel): a START posted on a synth track whose engine voice is on (S_ON) becomes the key's clean form 0x30 -- the CF START bit with sub-frame position 0 -- so the DSP does not crossfade its old voice under the engine's one continuous stream (BUILD 37: the +5.6 dB bump at a sequencer trig on a still-sounding note)",
                kind="jmp", pad_to=8),

@@ -220,6 +220,17 @@ Only tagged versions are releases; the numbered builds between two tags
 (2.3 .. 2.7 on the way to 2.8, the 2.9 builds before the tag) were test
 builds on the author's unit and were never tagged.
 
+- 2.12 (not tagged yet, 10 Oct 2026): the author's test of 2.11 on his MKI
+  (as Modwerk's FM Synth 0.1.4). THE METRONOME NO LONGER RELEASES A HELD
+  NOTE: with the metronome on and the sequencer playing, a held CHROMATIC key
+  or chord on an FM SYNTH (or SY DRUM) track was released at the next click
+  as if it had been let go -- at REL INF cut within 5 ms -- and every
+  sequencer note at the first click after it. Since 2.9 the engine had hooked
+  the metronome's click word, taking it for a STOP word; the hook is gone,
+  0x4000b2c8 is stock, the click still sounds, and STOP still ends the voices
+  at the stock voice kill. Everything else plays as on 2.11 (the FM harnesses'
+  PCM, the click cards, SY DRUM's renders and the machine-list walks are
+  unchanged). Emulator-verified, not yet on hardware.
 - 2.11 (tag `v2.11`, 9 Oct 2026): two new modules and the machine list
   they share. THE MACHINE LIST for more than one machine: the rows after
   PICKUP are a table filled per remix (FM SYNTH, then SY DRUM), the six
