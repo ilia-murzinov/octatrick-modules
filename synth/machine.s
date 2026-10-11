@@ -44,7 +44,8 @@
 | THE MACHINE CHANGE (2.12). A change of the machine a track plays, where the old or the
 | new machine is a row's (FM SYNTH, SY DRUM), sets the track to the new machine's init:
 | PLAYBACK and its SETUP, AMP and AMP SETUP, the three LFOs and LFO SETUP, SY DRUM's step
-| locks; the FX1 / FX2 slots stay (ml_reset). Through either list (fm_choose). A
+| locks; the FX1 / FX2 slots stay (ml_reset). Through either list (fm_choose) and through
+| a marker file (poly.s: the slot assigner and the file browser, ml_became / ml_reset). A
 | change between two stock machines is stock's (nothing written); a project, a Part
 | reload, a paste or a pattern change is no change (the bytes saved are the bytes played).
 |
@@ -62,6 +63,7 @@
         .global ml_win_count, ml_src_count, ml_name_bound, ml_draw_bound, ml_hi_bound, ml_cur_bound
         .global ml_clamp1, ml_clamp2, ml_clamp3, ml_clamp4, ml_clamp5
         .global ml_rows, fm_row
+        .global ml_reset, ml_kindof, ml_became | 2.12: the machine change's init (poly.s: the marker route)
         .include "remix.inc"             | 2.11: HAVE_SYDRUM and the shared equates (engine_abi.inc; manifest.py)
 
         .set    FM_ROW, 5                | the sixth row, the first after the stock five: FM SYNTH
@@ -210,6 +212,77 @@ ml_part:
         adda.l  %d0,%a0
         move.l  (%sp)+,%d0
         rts
+| ml_kindof: d0 = a machine byte, d1 = a FLEX slot, d2 = track of the current Part -> d0 =
+| the machine the track plays with them: 0 a stock machine, the row's kind for FLEX with a
+| row's signature (the Part's), 1 for FLEX over a marker slot; tst.l done. Preserves every
+| other register (the assigners' test, before or after their write: poly.s).
+ml_kindof:
+        cmpi.l  #FLEX,%d0
+        bne     ml_ko_stock
+        move.l  %a0,-(%sp)
+        bsr     ml_part
+        move.l  %d2,%d0
+        mulu.w  #30,%d0
+        adda.l  %d0,%a0
+        adda.l  #SIG_OFF,%a0             | the track's signature place
+        bsr     ml_sigrow
+        bmi     ml_ko_marker
+        lea     ml_rows(%pc),%a0
+        movea.l (%a0,%d0.l*4),%a0
+        mvz.b   RD_KIND(%a0),%d0         | the row's machine
+        movea.l (%sp)+,%a0
+        rts
+ml_ko_marker:
+        movea.l (%sp)+,%a0
+        move.l  %d1,%d0
+        jmp     po_slot_marker
+ml_ko_stock:
+        moveq   #0,%d0
+        rts
+| ml_became: the slot assigner's test (poly.s po_assign, after its slot-byte write): d0 =
+| the old machine, d1 = the new one, d2 = the track, d3 = the old slot of the new machine's
+| column, d4 = its new slot. The machine the track played before the assignment and the one
+| it plays after it (ml_kindof, the FLEX slot being d3 / d4 when the new machine is FLEX,
+| else the Part's): different, and one of them a row's -> ml_reset to the new one. The
+| marker route: a FLEX track given an FMSYNTH* / SYNTH* slot, or a marker track given a
+| sample, a STATIC slot... Preserves every register.
+ml_became:
+        lea     -24(%sp),%sp
+        movem.l %d0-%d5,(%sp)
+        move.l  %d1,%d5                  | the new machine
+        cmpi.l  #FLEX,%d1
+        beq     ml_bc_slots              | the FLEX column's slots are d3 (before) and d4 (after)
+        bsr     ml_flexslot              | another column: the FLEX slot is the Part's, unchanged
+        move.l  %d1,%d3
+        move.l  %d1,%d4
+ml_bc_slots:
+        move.l  %d3,%d1
+        bsr     ml_kindof                | d0 (the old machine), d1 (its FLEX slot): before
+        move.l  %d0,%d3
+        move.l  %d5,%d0
+        move.l  %d4,%d1
+        bsr     ml_kindof                | after
+        cmp.l   %d3,%d0
+        beq     ml_bc_out
+        move.l  %d5,%d1                  | the new machine (the column of a stock init)
+        bsr     ml_reset
+ml_bc_out:
+        movem.l (%sp),%d0-%d5
+        lea     24(%sp),%sp
+        rts
+| ml_flexslot: d2 = track -> d1 = the current Part's FLEX slot of the track (0-based).
+| Preserves every other register.
+ml_flexslot:
+        move.l  %a0,-(%sp)
+        bsr     ml_part
+        move.l  %d2,%d1
+        mulu.w  #5,%d1
+        adda.l  %d1,%a0
+        adda.l  #SLOT_FLEX,%a0
+        mvz.b   (%a0),%d1
+        movea.l (%sp)+,%a0
+        rts
+
 | ---- ml_reset (2.12): d0 = the machine the track gets (0 a stock machine, 1 FM SYNTH, 2 SY
 | DRUM), d1 = the stock machine (d0 = 0), d2 = the track of the current Part. Writes the
 | machine's INIT into the Part, its battery-RAM shadow and the track's live lane, so the
