@@ -22,9 +22,11 @@ SYNTH mechanism; synth/README.md, "Selecting FM SYNTH from the machine list"): n
 PLAYBACK page reads `PTCH MODE WDTH SWEP SPED DEC`, the title and footer `SY DRUM`, and both lists open on the
 `SY DRUM` row. Choosing it on a track that does not play SY DRUM yet sets the knobs to PTCH 0, MODE A, WDTH 64,
 SWEP 0, SPED 64, DEC 64 and the setup to LSPD 64, LDEP 0, WAVE OFF, S&H OFF; choosing it again keeps the patch.
-Choosing any other row clears the mark and puts the stock FLEX setup values back (LSPD .. S&H are no sample
-settings). The choice is a Part byte like the machine: saved with the Part and the project, copied and pasted
-with the Part.
+Choosing any other row clears the mark. **A machine change resets the track's machine parameters (PLAYBACK,
+PLAYBACK SETUP, AMP, LFO and their SETUP pages) to the new machine's init; step and scene locks are kept, as in the
+stock firmware; FX slots are kept** (2.12): to or from SY DRUM, those pages get the new machine's values (a stock
+machine's: a new project's) (synth/README.md, "A machine change resets the track's machine parameters"). The
+choice is a Part byte like the machine: saved with the Part and the project, copied and pasted with the Part.
 
 **Downgrading**: a build without SY DRUM reads such a track as a plain FLEX track with no sample (silent); the stock
 loader then clamps its PLAYBACK / SETUP bytes into FLEX's ranges. Choose a stock machine and SAVE before flashing
@@ -94,7 +96,7 @@ value: the effective value is the Part's default, then the step's lock (clamped 
 S&H 1). A step whose only locks are these is a lock trig (trigless): it changes the values without a new note.
 Conditional trigs the stock sequencer rejects apply no lock. The locks belong to bank, pattern, audio track and
 step; they are applied only while the track plays SY DRUM (a track switched to another machine keeps them, unheard,
-and they come back with SY DRUM).
+and they come back with SY DRUM; a machine change keeps them, as stock keeps its locks).
 
 **Copy, paste, clear.** The locks travel with the step in every stock sequence edit: a held trig's copy / paste /
 clear, a page's or a track's or a pattern's copy / paste / clear and their undo, the shift of a track's trigs, the

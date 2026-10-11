@@ -320,10 +320,10 @@ through a marker file (its patch and its setup values are kept; only the
 machine-list mark is added).
 
 **To go back** choose FLEX or STATIC (or any other machine) in either list.
-The mark is removed and the track is the plain machine again. The FLEX page
-keeps the FM values (STRT 12, LEN 32, RATE 64 ...), as a marker track's FLEX
-page does when its marker is replaced by a sample: set them for the sample.
-If the FLEX slot holds a marker file, the track still plays FM through it.
+The mark is removed and the track is the plain machine again, at that
+machine's init (since 2.12: "A machine change resets the track's machine
+parameters", below; the locks stay). If
+the FLEX slot holds a marker file, the track still plays FM through it.
 
 **What is stored.** The machine byte is FLEX (1), so every stock FLEX path --
 the PLAYBACK lanes, locks, LFOs, scenes, the DSP voice -- stays valid; the
@@ -515,7 +515,8 @@ its own row without a site of its own, and the two modules never write the same 
   version: `F`,`M`,1 / `S`,`Y`,1, in the first three bytes of the track's NEIGHBOR PLAYBACK column, as 2.10), the
   engine kind the engine's `po_signed` answers for it (1 FM, 2 SY DRUM), its name, its twelve seed bytes, the routine
   that returns its page (SRC SETUP's right half; written into the PLAYBACK descriptor table's spare slots 5 and 6
-  by the UI tick) and a flag for machines whose SETUP bytes are their own (leaving the row restores FLEX's). The
+  by the UI tick) and a flag for machines whose SETUP bytes are their own (leaving the row restored FLEX's; since
+  2.12 every change from a row resets the FLEX bytes, and the flag is not read). The
   table is assembled per remix: FM SYNTH always, SY DRUM's descriptor (`sd_row`, its own unit) when the remix
   carries SY DRUM. Choosing, highlighting, naming, opening on, editing and validating a row all read the table.
 - **The row count is the remix's.** The six constants 2.10 poked (the two lists' row counts, SRC SETUP's name
@@ -539,6 +540,64 @@ its own row without a site of its own, and the two modules never write the same 
   MIDI IN, the tuning system).
 - **ANALOG BD** (octabam's `modules/analog-bassdrum`) owns the same chooser sites; the manifest declares the
   conflict so octabam names the reason.
+
+## A machine change resets the track's machine parameters (2.12, 10 Oct 2026)
+
+The author's request: "if i change that track to be another machine, like from FM synth to SY DRUM, all the
+parameters, including any LFO settings, should be set to init. They should not inherit any parameters from the
+last machine that was on that track." And (11 Oct 2026): "yes i want it to work the same way as stock, i just want
+the machine parameters to init."
+
+**A machine change resets the track's machine parameters (PLAYBACK, PLAYBACK SETUP, AMP, LFO and their SETUP pages)
+to the new machine's init; step and scene locks are kept, as in the stock firmware; FX slots are kept.** Whenever the machine a
+track plays changes and the old or the new machine is FM SYNTH or SY DRUM -- in SELECT MACHINE TYPE, in SRC SETUP,
+or through a marker file (a FLEX track given an `FMSYNTH*` / `SYNTH*` slot in QUICK ASSIGN or the sample list, a
+marker track given a sample, a marker file loaded into or replaced in the track's FLEX slot) -- the track gets:
+
+- **PLAYBACK and PLAYBACK SETUP**: the new machine's defaults -- FM SYNTH: PTCH 0, RATO 1, INDX 32, FINE 0c, FDBK 0,
+  DEC 40, the setup OFF; SY DRUM: PTCH 0, MODE A, WDTH 64, SWEP 0, SPED 64, DEC 64, LSPD 64, LDEP 0, WAVE OFF, S&H
+  OFF; a stock machine: the stock defaults of its page (FLEX / STATIC: PTCH 0, STRT 0, LEN 0, RATE 127, RTRG 0,
+  RTIM 79; LOOP AUTO, SLIC OFF, LEN OFF, RATE PTCH, TSTR AUTO, TSNS 64), and the FLEX page too when the track leaves FM
+  SYNTH or SY DRUM (they keep their values in the FLEX bytes);
+- **AMP and AMP SETUP**: ATK 0, HOLD 127, REL 127, VOL and BAL centred, XVOL 127; AMP SETUP as a new project has it
+  (RTRG, SYNC ON, ATCK LIN, FX1 / FX2 ANLG, LEG OFF);
+- **the three LFOs and LFO SETUP**: SPD 32 and DEP 0 for each; PMTR the first PLAYBACK knob, WAVE TRI, MULT 1X,
+  TRIG FREE; on FM SYNTH, VOIC 1 and CHRD `----` (LFO 3's bytes).
+
+These are the values a new project gives a track (the stock Part initialiser's, read from the OS's own page
+records at run time; nothing is copied into this repository). FX1 / FX2 -- the effects, their pages and setup --
+stay: they are effect slots, not the machine's parameters. The same machine chosen again keeps its patch (FM SYNTH
+over a track that plays FM through a marker file too). A change between two stock machines (FLEX, STATIC, THRU,
+NEIGHBOR, PICKUP) is untouched: stock keeps every page there, each machine with its own PLAYBACK page. Nothing is
+reset by loading a project, reloading or pasting a Part, or changing patterns: only a machine change does. The
+reset is written into the Part and its battery-RAM copy (SAVE keeps it) and into the track's live state, so the
+next note plays it. Locks are not machine parameters and stay, as at a stock machine change: the step locks and
+trigs are the pattern's, the scene locks the Part's, and both apply by position, so a lock recorded on one machine
+plays on the same knob position of the new one; SY DRUM's own lock rows (LSPD LDEP WAVE S&H) stay too and are heard
+again when the track returns to SY DRUM. The
+LFO designer's shapes are the Part's eight designs, which any track's WAVE can pick, so they stay; the track's
+WAVE is reset, so no design plays on it.
+
+### How it works
+
+`machine.s`: `fm_choose` compares the machine the track plays before the choice (`ml_ident`: 0 a stock machine, 1
+FM SYNTH -- chosen, or FLEX over a marker slot --, 2 SY DRUM) with the one it plays after it (the row's; a stock
+row: 0, or 1 for FLEX over a marker slot) and calls `ml_reset` when they differ and either is 1 or 2. `ml_reset`
+writes the PLAYBACK / SETUP column (the row's seeds, or the stock descriptor's defaults through the machine ->
+descriptor table `0x400d5f38`), AMP and LFO pages 1 and 2 from the stock AMP and LFO descriptors' defaults (`P +
+0x5e`: page 1, `+ 0x64`: page 2 -- the tables the stock Part initialiser `0x40005638` reads; the six PMTR / WAVE and
+six MULT / TRIG bytes alternately from slots 6 / 7 and 8 / 9, as it writes them), into the Part, the battery-RAM
+shadow and the live lane (its bytes, the page-1 value words, their slew counters): the stock machine change
+(`0x400972fc`) reloads a track's lane from its Part only for PICKUP. It writes no pattern data and no scene: the
+locks are untouched. The marker route: the slot assigner's hook (`po_assign`) asks `ml_became`
+(the machine before and after the slot write, `ml_kindof`); the file browser's hook (`po_loadsel`) resets every
+FLEX track on the slot whose file went from a sample to a marker or back (a track chosen in the list keeps its
+machine whatever its slot holds) and marks the Part edited as stock's machine write does. The browser unloads
+the slot before it writes the new path (`0x40025288` clears the slot's whole settings record; the load callback
+`0x400226f4` calls it, then the select calls it again), so the file the slot had is read at the callback's call:
+one more detour, `0x40022732` (`jsr`) -> `po_unload` (until 2.12 the hook read the cleared record, so every load
+counted as "not a marker before"). The engine (`poly.s`'s
+voice code) is unchanged: the FM gate is 512 / 512 with the state of 2.11 (28b11d77).
 
 ## 6 dB of headroom (2.10, 8 Oct 2026)
 

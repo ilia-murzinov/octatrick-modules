@@ -295,6 +295,18 @@ write and, when it went non-marker -> marker, resets FINE on every FLEX
 track whose FLEX slot is that slot. A marker over a marker, a sample over a
 marker, a STATIC slot, a recorder buffer: untouched.
 
+A MACHINE CHANGE RESETS THE TRACK TO THE NEW MACHINE'S INIT (2.12, machine.s
+ml_reset). To or from FM SYNTH / SY DRUM -- through the lists (fm_choose), the
+slot assigner (po_assign -> ml_became) or the file browser (po_loadsel) -- the
+track's PLAYBACK and SETUP, AMP and AMP SETUP, LFO page and LFO SETUP take the
+new machine's init (a stock machine's: the stock page descriptors' defaults, as
+the stock Part initialiser writes them), and SY DRUM's step locks of the track
+go; FX1 / FX2 stay. The browser's select unloads the slot (0x40025288 clears its
+settings record) before the path write -- twice: the browser's load callback
+0x400226f4 unloads it, then calls the select, which unloads it again -- so the
+file the slot had is read at the callback's call: one more jsr detour,
+0x40022732 -> po_unload.
+
 FM SYNTH IN THE MACHINE LIST (2.10, 8 Oct 2026, machine.s; adapted from
 Modwerk's FM Synth module, MIT, Modwerk contributors). FM SYNTH is the sixth
 row of SELECT MACHINE TYPE (the track key twice, then LEFT) and of SRC SETUP
@@ -427,6 +439,8 @@ LISTWIN_STOCK = bytes.fromhex("d1fc0008eda2" "7910")
 # the sample-list window's LOAD FILE never touches the Part).
 LOADSEL_HOOK = 0x40022686                # `jsr 0x40013a08` (sprintf: record, "%s..", path) in the browser's select 0x40022610
 LOADSEL_STOCK = bytes.fromhex("4eb940013a08")
+UNLOAD_HOOK = 0x40022732                 # `jsr 0x40025288` (the slot unload: machine, slot) in the browser's load callback 0x400226f4, before its call of the select
+UNLOAD_STOCK = bytes.fromhex("4eb940025288")
 
 # 2.10 (8 Oct 2026): FM SYNTH IN THE MACHINE LIST (machine.s; after Modwerk's FM Synth
 # module, MIT, Modwerk contributors -- its dedicated chooser, Part validation and
@@ -716,6 +730,10 @@ MODULE = Module(
                "file browser select: the slot's path write (stock's sprintf, called from the stub) -- a FLEX slot's file going "
                "non-marker -> FMSYNTH*/SYNTH* makes every FLEX track holding that slot a synth track: FINE 0c for each (the new-project case: "
                "T1 = FLEX slot 1, the first marker loaded into slot 1, no machine or slot byte changes)",
+               kind="jsr"),
+        Detour(UNLOAD_HOOK, UNLOAD_STOCK, "poly", "po_unload",
+               "file browser load callback: the slot unload before the select (2.12) -- the FLEX slot's marker state is kept for "
+               "po_loadsel (the unload clears the slot's record), then the stock unload",
                kind="jsr"),
         # ---- FM SYNTH in the machine list (2.10, machine.s; MACHWIN_HOOK above) ----
         Detour(FM_NAME_HOOK, FM_NAME_STOCK, "fmmachine", "fm_machine_name",

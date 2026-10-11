@@ -67,7 +67,13 @@ to watch.
   selector, as it is on every sample track.
   Since 2.11 the rows after PICKUP are a table the remix fills (FM SYNTH
   always, SY DRUM when the remix has it) and SELECT MACHINE TYPE scrolls
-  when there are more than six rows. `synth/README.md`.
+  when there are more than six rows. Since 2.12 a machine change resets
+  the track's machine parameters (PLAYBACK, PLAYBACK SETUP, AMP, LFO and
+  their SETUP pages) to the new machine's init; step and scene locks are
+  kept, as in the stock firmware; FX slots are kept. This applies to a
+  change to or from FM SYNTH or SY DRUM (either list, or a marker file);
+  a stock machine's init is a new project's; a change between stock
+  machines is stock's. `synth/README.md`.
 - **`sy-drum/`** (key `SY DRUM`, since 2.11; requires `SYNTH MACHINE`) -- a
   drum machine in the machine list, the row after FM SYNTH: a two-oscillator
   percussion voice with a sweep, a filter opened by the decay, six modes
@@ -220,24 +226,40 @@ Only tagged versions are releases; the numbered builds between two tags
 (2.3 .. 2.7 on the way to 2.8, the 2.9 builds before the tag) were test
 builds on the author's unit and were never tagged.
 
-- 2.12 (not tagged yet, 10 Oct 2026): the author's test of 2.11 on his MKI
-  (as Modwerk's FM Synth 0.1.4). THE METRONOME NO LONGER RELEASES A HELD
-  NOTE: with the metronome on and the sequencer playing, a held CHROMATIC key
-  or chord on an FM SYNTH (or SY DRUM) track was released at the next click
-  as if it had been let go -- at REL INF cut within 5 ms -- and every
-  sequencer note at the first click after it. Since 2.9 the engine had hooked
-  the metronome's click word, taking it for a STOP word; the hook is gone,
-  0x4000b2c8 is stock, the click still sounds, and STOP still ends the voices
-  at the stock voice kill. GRID STEPS AND PLAYED NOTES, THE SAME LEVEL: a grid
-  trig, a held key and a live-recorded trig of the same note at the same VOIC
-  were measured equal (within 0.01 dB RMS and peak); steps sound softer only
-  through AMP HOLD (it gates sequencer trigs, not held keys), VOIC (a voice is
-  1 / sqrt(VOIC) of the mono voice, so a single step at VOIC 4 is 6 dB below a
-  played four-note chord) or a same-pitch repeat at VOIC 2..4 summing with its
-  own release tail -- explained in synth/README.md, no level changed.
-  Everything else plays as on 2.11 (the FM harnesses' PCM, the click cards,
-  SY DRUM's renders and the machine-list walks are unchanged).
-  Emulator-verified, not yet on hardware.
+- 2.12 (tag `v2.12`, 11 Oct 2026): two fixes from the author's test of
+  2.11 on his MKI (as Modwerk's FM Synth 0.1.4). THE METRONOME NO LONGER
+  CUTS A HELD NOTE: a held note no longer cuts out at every metronome click;
+  the engine had taken the click word for a STOP. With the metronome on and
+  the sequencer playing, a held CHROMATIC key or chord on an FM SYNTH (or SY
+  DRUM) track was released at the next click as if it had been let go -- at
+  REL INF cut within 5 ms -- and every sequencer note at the first click
+  after it. Since 2.9 the engine had hooked the metronome's click word; the
+  hook is gone, 0x4000b2c8 is stock, the click still sounds, and STOP still
+  ends the voices at the stock voice kill. A MACHINE CHANGE RESETS THE
+  TRACK'S MACHINE PARAMETERS TO INIT: a machine change to or from FM SYNTH /
+  SY DRUM resets the track's machine parameters to the new machine's init;
+  step and scene locks are kept as in the stock firmware; FX slots are kept.
+  When a track's machine changes to or from FM SYNTH or SY DRUM -- in SELECT
+  MACHINE TYPE, SRC SETUP or through a marker file -- its PLAYBACK and
+  PLAYBACK SETUP pages, AMP and AMP SETUP, the three LFOs and LFO SETUP (FM
+  SYNTH: VOIC 1, CHRD off) take the new machine's init, the values a new
+  project gives a track (read from the OS's own page records); FX1 / FX2
+  stay. No machine parameter inherits from the machine before (2.11 kept the
+  FM values in the FLEX page and every AMP and LFO setting). The step locks,
+  scene locks and SY DRUM's lock rows stay with the pattern and the Part, as
+  stock keeps its locks at a machine change. A change between stock machines
+  is unchanged, and so is a project load: 2.10 / 2.11 projects load as they
+  were saved. GRID STEPS AND PLAYED NOTES, THE SAME LEVEL (no level
+  changed): a grid trig, a held key and a live-recorded trig of the same
+  note at the same VOIC were measured equal (within 0.01 dB RMS and peak);
+  steps sound softer only by design -- through AMP HOLD (it gates sequencer
+  trigs, not held keys), VOIC (a voice is 1 / sqrt(VOIC) of the mono voice,
+  so a single step at VOIC 4 is 6 dB below a played four-note chord) or a
+  same-pitch repeat at VOIC 2..4 summing with its own release tail --
+  explained in synth/README.md. Everything else plays as on 2.11 (the FM
+  harnesses' PCM, the click cards and SY DRUM's renders are unchanged; the
+  machine lists show the same rows). Emulator-verified, not yet on
+  hardware.
 - 2.11 (tag `v2.11`, 9 Oct 2026): two new modules and the machine list
   they share. THE MACHINE LIST for more than one machine: the rows after
   PICKUP are a table filled per remix (FM SYNTH, then SY DRUM), the six

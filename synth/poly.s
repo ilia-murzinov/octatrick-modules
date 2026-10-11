@@ -148,9 +148,11 @@
         .global po_mon, po_moff, po_mgate, po_mogate, po_mrec, po_mtrig
         .global po_ampstage, po_ampdraw1, po_ampdraw2, po_ampdraw3, po_ampedit, po_amplane
         .global po_assign, po_machwin, po_machlist, po_loadsel, po_kill
+        .global po_unload                | 2.12: the browser's first slot unload (the file a FLEX slot had)
         .global po_retrig
         .global po_fmsource, po_fmstart  | the FM SYNTH machine (machine.s): the source supplier and the START callback
         .global po_is_synth, po_sig      | ... and its tests (machine.s: the chooser's commits, the row lookups, the Part validator)
+        .global po_slot_marker           | 2.12: ... and the marker test (machine.s: the machine change, ml_kindof)
         .global po_lfdname, po_lfdedit, po_lfdlfo | 2.10: the LFO destination list (LFO SETUP's PMTR)
         .include "remix.inc"             | 2.11: the remix's flags (HAVE_SYDRUM: SY DRUM in the remix) and the shared
                                          | equates (engine_abi.inc), written beside this unit by the build (manifest.py);
@@ -5881,7 +5883,7 @@ po_assign:
         move.l  24(%sp),%d0              | the old machine
         move.l  20(%sp),%d2              | the track
         move.l  %a3,%d1                  | the new machine
-        bsr     po_became
+        jsr     ml_became                | 2.12 (machine.s): a machine change -> the new machine's init
         movem.l (%sp),%d1-%d4
         lea     16(%sp),%sp
         jmp     ASSIGN_RET
@@ -6017,35 +6019,41 @@ po_fine_reset:
 | touches the Part: the machine and the slot byte do not change, none of the
 | three assigner sites runs, and the track has become a synth track by its
 | slot's FILE changing. So the change of a FLEX slot's file is the fourth site:
-| the slot's marker state is read before the path write and after it, and when
-| it went non-marker (or empty) -> marker, every FLEX track whose FLEX slot is
-| this slot became a synth track: RATE := 64 for each (po_fine_reset). A marker
-| replaced by a marker changes nothing (its synth tracks keep their FINE), a
-| marker replaced by a sample, a STATIC slot, a recorder buffer: nothing.
+| the slot's marker state before the load and after the path write. 2.12: "before"
+| is read at the browser's first unload call (po_unload, 0x40022732): the unload
+| 0x40025288 clears the slot's whole settings record (memset 0x448), and the load
+| callback 0x400226f4 calls it before the select (which calls it again before
+| this path write), so the file the slot had is gone here (until 2.12 every load
+| read "not a marker" before it). The machine change (machine.s ml_reset): when the
+| marker state changed -- a sample (or nothing)
+| replaced by a marker, or a marker by a sample --, every FLEX track whose FLEX
+| slot is this slot and which is not chosen in the list (a row's signature: that
+| machine plays, whatever the slot holds) changed machine, FLEX <-> FM SYNTH: it
+| gets the new machine's init, and the Part is marked edited as stock's machine
+| write marks it (po_dirty). A marker replaced by a marker, a sample by a sample,
+| a STATIC slot, a recorder buffer: nothing. (Until 2.12 only FINE was reset, and
+| only on the way to a marker.)
 po_loadsel:
-        lea     -12(%sp),%sp
-        movem.l %d2/%d6-%d7,(%sp)        | 12 B: the return address at 12(sp), the arguments at 16 / 20 / 24
-        moveq   #0,%d7
-        moveq   #1,%d0
-        cmp.l   %d4,%d0
-        bne     po_ls_call               | not the FLEX list
-        move.l  %d3,%d0
-        bsr     po_slot_marker
-        move.l  %d0,%d7                  | d7 := the slot's file WAS a marker
+        lea     -16(%sp),%sp
+        movem.l %d2/%d5-%d7,(%sp)        | 16 B: the return address at 16(sp), the arguments at 20 / 24 / 28
+        mvz.b   po_ls_was(%pc),%d7       | d7 := the slot's file WAS a marker (po_unload, just before)
+        lea     po_ls_was(%pc),%a0
+        clr.b   (%a0)
 po_ls_call:
-        move.l  24(%sp),-(%sp)           | the path
-        move.l  24(%sp),-(%sp)           | the format
-        move.l  24(%sp),-(%sp)           | the record
+        move.l  28(%sp),-(%sp)           | the path
+        move.l  28(%sp),-(%sp)           | the format
+        move.l  28(%sp),-(%sp)           | the record
         jsr     LOADSEL_SPRINTF          | stock: the path into the record
         lea     12(%sp),%sp
         moveq   #1,%d0
         cmp.l   %d4,%d0
         bne     po_ls_out
-        tst.l   %d7
-        bne     po_ls_out                | a marker already: its synth tracks keep their FINE
         move.l  %d3,%d0
         bsr     po_slot_marker
-        beq     po_ls_out                | not a marker now: no synth track
+        cmp.l   %d7,%d0
+        beq     po_ls_out                | its marker state unchanged: its tracks play what they played
+        move.l  %d0,%d5                  | the machine its FLEX tracks play now: 1 FM SYNTH, 0 FLEX
+        moveq   #0,%d7                   | (no track reset yet)
         move.l  %d3,%d6                  | the slot
         moveq   #0,%d2                   | the track
 po_ls_track:
@@ -6066,16 +6074,76 @@ po_ls_track:
         mvz.b   (%a0,%d0.l),%d0          | its FLEX slot
         cmp.l   %d6,%d0
         bne     po_ls_next
-        bsr     po_fine_reset            | d2 = the track: FINE 0c (preserves every register)
+        moveq   #1,%d0
+        move.l  #255,%d1
+        jsr     ml_kindof                | FLEX with no slot: a row's machine when it is chosen in the list
+        bne     po_ls_next               | chosen: that machine plays, unchanged
+        move.l  %d5,%d0
+        moveq   #1,%d1
+        jsr     ml_reset                 | d2 = the track: the init of the machine it plays now
+        moveq   #1,%d7
 po_ls_next:
         addq.l  #1,%d2
         moveq   #8,%d0
         cmp.l   %d2,%d0
         bne     po_ls_track
+        tst.l   %d7
+        beq     po_ls_out
+        bsr     po_dirty                 | a track was reset: the Part is edited
 po_ls_out:
-        movem.l (%sp),%d2/%d6-%d7
-        lea     12(%sp),%sp
+        movem.l (%sp),%d2/%d5-%d7
+        lea     16(%sp),%sp
         rts
+
+| ---- 0x40022732 (jsr, 6 B): the browser's load callback 0x400226f4 calls the slot unload
+| 0x40025288(machine, slot) before the select 0x40022610 (which unloads it again and then
+| writes the new path); replaced by `jsr po_unload` (2.12): for the FLEX list the slot's
+| marker state is kept in po_ls_was for po_loadsel, then the stock unload runs with the
+| caller's arguments (a tail jump: it returns to the callback). Clobbers d0, a0.
+        .set    UNLOAD, 0x40025288       | the stock slot unload (machine, slot): its settings record cleared
+po_unload:
+        move.l  4(%sp),%d0               | the machine
+        subq.l  #1,%d0
+        beq     po_ul_flex               | the FLEX list
+        moveq   #0,%d0
+        bra     po_ul_store
+po_ul_flex:
+        move.l  8(%sp),%d0               | the slot
+        bsr     po_slot_marker           | d0 := 1 when its file is a marker
+po_ul_store:
+        lea     po_ls_was(%pc),%a0
+        move.b  %d0,(%a0)
+        jmp     UNLOAD
+
+| ---- po_dirty (2.12): the current Part is marked edited as stock's machine write marks it
+| (the machine window's apply path, 0x4007982c..0x40079866): its unsaved bit in the bank
+| (+ 0x95048) and in battery RAM (0x100b145e), the bank's write flag (+ 0x9b332) and its
+| battery-RAM copy (0x100f8598), then the stock clipboard / undo reset 0x40027e00 the same
+| path calls. Clobbers d0, d1, a0, a1.
+        .set    PART_UNSAVED, 0x95048    | the bank blob + this: bit p = Part p edited since its SAVE
+        .set    PART_UNSAVED_BR, 0x100b145e | ... its battery-RAM copy
+        .set    BANK_WRITE, 0x9b332      | the bank blob + this: the bank is written by the next bank write (a long)
+        .set    BANK_WRITE_BR, 0x100f8598 | ... its battery-RAM copy
+        .set    UNDO_RESET, 0x40027e00   | the stock clipboard / undo state reset after a Part edit
+po_dirty:
+        mvz.b   PART_IDX,%d1
+        moveq   #0,%d0
+        bset    %d1,%d0                  | the Part's bit
+        movea.l PART_PTR,%a0
+        adda.l  #PART_UNSAVED,%a0
+        mvz.b   (%a0),%d1
+        or.l    %d0,%d1
+        move.b  %d1,(%a0)                | the bank's unsaved bits
+        lea     PART_UNSAVED_BR,%a1
+        mvz.b   (%a1),%d1
+        or.l    %d0,%d1
+        move.b  %d1,(%a1)                | ... their battery-RAM copy
+        movea.l PART_PTR,%a0
+        adda.l  #BANK_WRITE,%a0
+        moveq   #1,%d0
+        move.l  %d0,(%a0)                | the bank is written by the next bank write
+        move.l  %d0,BANK_WRITE_BR
+        jmp     UNDO_RESET
 
 | ---- data ----------------------------------------------------------------------
 sy_name:
@@ -6320,6 +6388,8 @@ po_pg_built:
 po_pgdesc_buf:                           | the FM SYNTH PLAYBACK descriptor clone for page.s (built on first use)
         .fill   FLEX_DESC_LEN, 1, 0
 po_amp_built:
+        .byte   0
+po_ls_was:                               | (2.12) the browser's slot held a marker before its load (po_unload -> po_loadsel)
         .byte   0
         .align  4
 po_ampdesc_buf:                          | the AMP descriptor clone with LEG in slot 11 (built on first use, po_amp_desc)
