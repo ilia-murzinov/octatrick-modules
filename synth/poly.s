@@ -151,6 +151,7 @@
         .global po_retrig
         .global po_fmsource, po_fmstart  | the FM SYNTH machine (machine.s): the source supplier and the START callback
         .global po_is_synth, po_sig      | ... and its tests (machine.s: the chooser's commits, the row lookups, the Part validator)
+        .global po_slot_marker           | 2.12: ... and the marker test (machine.s: the machine change)
         .global po_lfdname, po_lfdedit, po_lfdlfo | 2.10: the LFO destination list (LFO SETUP's PMTR)
         .include "remix.inc"             | 2.11: the remix's flags (HAVE_SYDRUM: SY DRUM in the remix) and the shared
                                          | equates (engine_abi.inc), written beside this unit by the build (manifest.py);

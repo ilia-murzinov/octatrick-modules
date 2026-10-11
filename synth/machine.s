@@ -9,8 +9,8 @@
 | their number. A row descriptor (20 bytes): +0 its signature (two letters and a version,
 | "FM", 1), +3 the engine kind po_signed answers for it (1 FM, 2 SY), +4 its name, +8 its
 | twelve seed bytes (6 PLAYBACK, 6 SETUP), +12 a routine returning its PLAYBACK descriptor
-| in d0 (SRC SETUP's page for that row; clobbers d0/d1/a0/a1), +16 flags (bit 0: leaving
-| the row restores the stock FLEX SETUP bytes -- its SETUP bytes are not FLEX's). The
+| in d0 (SRC SETUP's page for that row; clobbers d0/d1/a0/a1), +16 flags (bit 0: its SETUP
+| bytes are not FLEX's; 2.12: not read -- leaving a row resets the FLEX bytes anyway). The
 | stock code's row-count and row-bound constants (five machines, rows 0..4) are not poked:
 | six small detours take 5 + ML_COUNT and 4 + ML_COUNT, so the same sites serve any number
 | of rows and a second machine module needs no site of its own. With FM SYNTH alone every
@@ -39,8 +39,14 @@
 | that does not play the FM voice yet seeds the FLEX PLAYBACK bytes with PTCH 0, RATO
 | 1, INDX 32, FINE 0c, FDBK 0, DEC 40 and the FLEX SETUP bytes with 0 (LOOP, SLIC,
 | LEN, RATE, TSTR, TSNS: OFF); choosing it again keeps the patch; choosing any other
-| row clears the signature (the FLEX bytes keep the FM values, as a marker track's do
-| when its marker is replaced).
+| row clears the signature.
+|
+| THE MACHINE CHANGE (2.12). A change of the machine a track plays, where the old or the
+| new machine is a row's (FM SYNTH, SY DRUM), sets the track to the new machine's init:
+| PLAYBACK and its SETUP, AMP and AMP SETUP, the three LFOs and LFO SETUP, SY DRUM's step
+| locks; the FX1 / FX2 slots stay (ml_reset). Through either list (fm_choose). A
+| change between two stock machines is stock's (nothing written); a project, a Part
+| reload, a paste or a pattern change is no change (the bytes saved are the bytes played).
 |
 | The engine's side is poly.s: po_is_synth (and the quantizer's qz_is_synth) answer
 | yes for a signed track, po_fmstart starts its voice without a sample, po_fmsource
@@ -66,7 +72,6 @@
         .set    RD_SEEDS, 8
         .set    RD_DESC, 12
         .set    RD_FLAGS, 16
-        .set    RDF_SETUP, 0             | flags bit 0: its SETUP bytes are its own (leaving restores FLEX's)
         .set    FLEX, 1
         .set    PART_OFF, 0x8ed80        | the Part's own +0 (what the validator is handed)
         .set    FLEX_PB, 0x8edb0         | + 30 * track: the FLEX PLAYBACK bytes (PTCH STRT LEN RATE RTRG RTIM)
@@ -102,22 +107,22 @@
         .set    CUR_BOUND_OUT, 0x4007990c | ... or not
         .set    VALIDATE_BODY, 0x40002320 | the Part validator after its prologue
 
-| ---- ml_choose: d1 = the chosen row, d2 = the track (the current Part) -> d1 = the
+| ---- fm_choose: d1 = the chosen row, d2 = the track (the current Part) -> d1 = the
 | machine byte to store. A row of ml_rows -> FLEX, with that row's signature written into
-| the Part and its shadow (and the twelve FLEX bytes seeded first from the row's seeds
-| unless the track already plays that machine: the same engine kind -- FM: signed, or
-| FLEX with a marker slot; SY DRUM: signed -- answered before the machine byte is
-| stored); a stock row: unchanged, any row's signature cleared (and, when the track
-| leaves a row whose SETUP bytes are its own, the stock FLEX SETUP bytes back: Part,
-| shadow and the live lane's). Preserves every other register.
-| The seed reaches the engine the way stock's reload of a track from its Part does
-| (0x40001f18, and the frame builder's refresh at 0x4000c0b4 when a track's first trig
-| comes from another bank or Part): the live lane's PLAYBACK bytes, its SETUP bytes
-| (lane + 32), the PLAYBACK value words (CV_WORDS + 64 * track, byte << 8: what the
-| copier hands the DSP and sy_render every frame) and the two slew counters of those
-| bytes cleared. The frame builder refreshes them from the Part only at such a trig,
-| so a track that had played a sample in this Part kept that sample's words and SETUP
-| (found 8 Oct 2026: RATE 127 = FINE +63c, STRT 0 = RATO 0.25, two octaves down: 67.8 Hz for C4).
+| the Part and its shadow; a stock row: unchanged, any row's signature cleared. Preserves
+| every other register.
+| THE MACHINE CHANGE (2.12, Tim, 10 Oct 2026: "all the parameters, including any LFO
+| settings, should be set to init. They should not inherit any parameters from the last
+| machine that was on that track."). The machine the track plays before the choice (ml_ident:
+| 0 a stock machine, 1 FM -- chosen, or FLEX with a marker slot --, 2 SY DRUM) is compared
+| with the one it plays after it (the row's engine kind; a stock row: 0, or 1 for FLEX
+| whose FLEX slot holds a marker file). When they differ and either is one of the rows'
+| machines, the track gets the new machine's init (ml_reset): its PLAYBACK and PLAYBACK
+| SETUP bytes, the AMP and AMP SETUP pages, the three LFOs and LFO SETUP, the SY DRUM step
+| locks; the FX1 / FX2 slots are kept. The same machine again keeps the patch (a track that
+| plays the FM voice through a marker file keeps it when FM SYNTH is chosen over it). A
+| change between stock machines writes nothing here (stock's own behaviour: each machine
+| keeps its PLAYBACK column, every other page stays).
 fm_choose:
         lea     -36(%sp),%sp
         movem.l %d0/%d3/%a0-%a6,(%sp)
@@ -136,60 +141,18 @@ fm_choose:
         adda.l  #SIG_OFF,%a2             | a2 = the signature in the Part
         movea.l %a1,%a3
         adda.l  #SIG_OFF,%a3             | a3 = ... in the shadow
+        bsr     ml_ident                 | (d2) the machine the track plays now: 0 / 1 FM / 2 SY DRUM
+        move.l  %d0,%d3
         move.l  %d1,%d0
         subq.l  #FM_ROW,%d0              | the row's index in ml_rows
         cmpi.l  #ML_COUNT,%d0
-        bcc     fm_ch_clear              | (unsigned) a stock row
+        bcc     fm_ch_stock              | (unsigned) a stock row
         lea     ml_rows(%pc),%a6
         movea.l (%a6,%d0.l*4),%a6        | a6 = the row's descriptor
-        .if     HAVE_SYDRUM
-        jsr     po_ident                 | (d2) 0 / 1 FM (signed or a marker) / 2 SY DRUM (signed)
-        cmp.b   RD_KIND(%a6),%d0
+        mvz.b   RD_KIND(%a6),%d0         | the machine it plays
+        cmp.l   %d3,%d0
         beq     fm_ch_sign               | that machine already: its patch is the user's
-        .else
-        jsr     po_is_synth              | (d2) the FM voice already: its patch is the user's
-        bne     fm_ch_sign
-        .endif
-        lea     FLEX_PB-SIG_OFF(%a2),%a0 | the FLEX PLAYBACK bytes in the Part (12 below the signature)
-        lea     FLEX_PB-SIG_OFF(%a3),%a1 | ... in the shadow
-        move.l  %d2,%d0
-        mulu.w  #CV_STRIDE,%d0
-        addi.l  #CURVALS,%d0
-        movea.l %d0,%a4                  | the track's live lane, flat slots 0..5
-        movea.l RD_SEEDS(%a6),%a5        | the row's seeds: 6 PLAYBACK, then 6 SETUP
-        moveq   #6,%d3
-fm_ch_seed:
-        move.b  (%a5),%d0
-        move.b  %d0,(%a0)                | PLAYBACK k: the Part,
-        move.b  %d0,(%a1)                | its shadow
-        move.b  %d0,(%a4)+               | and the live lane (the page shows it at once)
-        move.b  6(%a5),%d0
-        move.b  %d0,SETUP_GAP(%a0)       | SETUP k: the Part,
-        move.b  %d0,SETUP_GAP(%a1)       | its shadow
-        move.b  %d0,CV_SETUP-1(%a4)      | ... and the lane's SETUP k
-        addq.l  #1,%a5
-        addq.l  #1,%a0
-        addq.l  #1,%a1
-        subq.l  #1,%d3
-        bne     fm_ch_seed
-        move.l  %d2,%d0
-        lsl.l   #6,%d0
-        movea.l %d0,%a0
-        adda.l  #CV_WORDS,%a0            | the track's PLAYBACK value words
-        movea.l RD_SEEDS(%a6),%a5
-        moveq   #6,%d3
-fm_ch_word:
-        mvz.b   (%a5)+,%d0
-        lsl.l   #8,%d0
-        move.w  %d0,(%a0)+               | PLAYBACK k: byte << 8
-        subq.l  #1,%d3
-        bne     fm_ch_word
-        move.l  %d2,%d0
-        lsl.l   #5,%d0
-        movea.l %d0,%a0
-        adda.l  #CV_SLEW,%a0             | the track's slew counters (a long per four lane bytes)
-        clr.l   (%a0)+                   | lane bytes 0..3: 0 = the next frame takes the lane's values
-        clr.l   (%a0)                    | lane bytes 4..7
+        bsr     ml_reset                 | its init (d0 = its kind)
 fm_ch_sign:
         move.b  (%a6),(%a2)              | the row's signature: the Part ...
         move.b  1(%a6),1(%a2)
@@ -199,29 +162,15 @@ fm_ch_sign:
         move.b  2(%a6),2(%a3)
         moveq   #FLEX,%d1                | stored as FLEX
         bra     fm_ch_out
-fm_ch_clear:
-        movea.l %a2,%a0
-        bsr     ml_sigrow                | the row the track leaves, if any
-        bmi     fm_ch_unsign
-        lea     ml_rows(%pc),%a6
-        movea.l (%a6,%d0.l*4),%a6
-        btst    #RDF_SETUP,RD_FLAGS(%a6)
-        beq     fm_ch_unsign
-        lea     FLEX_PB-SIG_OFF+SETUP_GAP(%a2),%a0 | its SETUP bytes are its own: the stock FLEX SETUP bytes back
-        lea     FLEX_PB-SIG_OFF+SETUP_GAP(%a3),%a1 | (Part, shadow, live lane), so stock FLEX never reads them
-        move.l  %d2,%d0
-        mulu.w  #CV_STRIDE,%d0
-        addi.l  #CURVALS+CV_SETUP,%d0
-        movea.l %d0,%a4
-        lea     FLEX_DEF+6,%a5           | the stock FLEX descriptor's six SETUP defaults
-        moveq   #6,%d3
-fm_ch_restore:
-        move.b  (%a5)+,%d0
-        move.b  %d0,(%a0)+
-        move.b  %d0,(%a1)+
-        move.b  %d0,(%a4)+
-        subq.l  #1,%d3
-        bne     fm_ch_restore
+fm_ch_stock:
+        moveq   #0,%d0                   | a stock machine ...
+        cmpi.l  #FLEX,%d1
+        bne     fm_ch_new
+        bsr     ml_flexmark              | ... but FLEX over a marker slot plays the FM voice
+fm_ch_new:
+        cmp.l   %d3,%d0
+        beq     fm_ch_unsign             | the same machine (or stock to stock): nothing written
+        bsr     ml_reset                 | d0 = 0 / 1, d1 = the stock machine
 fm_ch_unsign:
         movea.l %a2,%a0
         bsr     fm_unsign
@@ -230,6 +179,271 @@ fm_ch_unsign:
 fm_ch_out:
         movem.l (%sp),%d0/%d3/%a0-%a6
         lea     36(%sp),%sp
+        rts
+| ml_ident: d2 = track of the current Part -> d0 = the machine it plays: 1 FM (FM SYNTH
+| chosen, or FLEX with an FMSYNTH* / SYNTH* slot), 2 SY DRUM (chosen), 0 a stock machine;
+| tst.l done. Preserves every other register.
+ml_ident:
+        .if     HAVE_SYDRUM
+        jmp     po_ident
+        .else
+        jmp     po_is_synth
+        .endif
+| ml_flexmark: d2 = track -> d0 = 1 when the current Part's FLEX slot of the track holds a
+| marker file (po_slot_marker), else 0; tst.l done. Preserves every other register.
+ml_flexmark:
+        move.l  %a0,-(%sp)
+        bsr     ml_part
+        move.l  %d2,%d0
+        mulu.w  #5,%d0
+        adda.l  %d0,%a0
+        adda.l  #SLOT_FLEX,%a0
+        mvz.b   (%a0),%d0                | its FLEX slot, 0-based
+        movea.l (%sp)+,%a0
+        jmp     po_slot_marker
+| ml_part: a0 := the current Part (the bank blob + part * 6322). Preserves every other register.
+ml_part:
+        move.l  %d0,-(%sp)
+        mvz.b   PART_IDX,%d0
+        mulu.w  #6322,%d0                | part * 6322 (part 0..3)
+        movea.l PART_PTR,%a0
+        adda.l  %d0,%a0
+        move.l  (%sp)+,%d0
+        rts
+| ---- ml_reset (2.12): d0 = the machine the track gets (0 a stock machine, 1 FM SYNTH, 2 SY
+| DRUM), d1 = the stock machine (d0 = 0), d2 = the track of the current Part. Writes the
+| machine's INIT into the Part, its battery-RAM shadow and the track's live lane, so the
+| page shows it at once, the next frame plays it and SAVE keeps it:
+|   * PLAYBACK and PLAYBACK SETUP: a row's machine -- its twelve seeds in the FLEX column (FM
+|     SYNTH: PTCH 0, RATO 1, INDX 32, FINE 0c, FDBK 0, DEC 40, SETUP 0; SY DRUM: PTCH 0, MODE
+|     A, WDTH 64, SWEP 0, SPED 64, DEC 64, LSPD 64, LDEP 0, WAVE OFF, S&H OFF); a stock
+|     machine -- its column at the defaults of its stock PLAYBACK descriptor, and the FLEX
+|     column at FLEX's (the FLEX bytes a row's machine had used: they are no sample settings);
+|   * AMP (ATK HOLD REL VOL BAL XVOL), AMP SETUP (AMP SYNC ATCK FX1 FX2, and LEG / TRIG), the
+|     LFO page (SPD1..3 DEP1..3) and LFO SETUP (PMTR WAVE MULT TRIG of each LFO): the stock
+|     new-track values -- what the stock Part initialiser (0x40005638, run for every Part of
+|     a new project and by Part CLEAR) writes, read here from the same stock descriptors at
+|     run time (their defaults: page 1 at P + 0x5e, page 2 at P + 0x64; the six PMTR / WAVE
+|     bytes from the LFO page's slot 6 / 7 defaults and the six MULT / TRIG bytes from its
+|     slot 8 / 9 defaults, alternately, as the initialiser writes them);
+|     FM SYNTH: VOIC 1 and CHRD off in LFO 3's SPD3 / DEP3 bytes;
+|   * SY DRUM's step locks of the track (sd_clear_locks), when the remix carries it.
+| FX1 / FX2 (their effect, page and setup bytes) are kept: effect slots, not the machine's.
+| The live lane gets the bytes written (its PLAYBACK, SETUP, page-1 and page-2 bytes, the
+| page-1 value words byte << 8, their slew counters cleared): the stock machine change
+| reloads a track from its Part only for PICKUP (0x400972fc -> 0x40001f18), and the frame
+| builder refreshes the words from the Part only at a trig from another bank or Part (8 Oct
+| 2026: a stale RATE word played 67.8 Hz). Preserves every register.
+        .set    LFO_P, 0x400d37f6        | the stock LFO page descriptor (P form)
+        .set    AMP_P, 0x400d3988        | the stock AMP page descriptor (P form)
+        .set    DEF1, 0x5e               | a descriptor's twelve defaults: page 1 (6), then page 2 (6) at + 6
+        .set    PB_OFF, 0x8edaa          | + 30 * track + 6 * machine: a PLAYBACK column (SETUP_GAP on: its SETUP column)
+        .set    PAGE1_OFF, 0x8ee9a       | + 24 * track: LFO (SPD1..3 DEP1..3), AMP, FX1, FX2 page 1
+        .set    PAGE2_OFF, 0x8f072       | + 30 * track: PMTR1..3 WAVE1..3, AMP SETUP, FX1 SETUP, FX2 SETUP, the MULT / TRIG bytes
+        .set    SLOT_FLEX, 0x8f04b       | + 5 * track: the FLEX column's slot byte
+        .set    CV_LFO, 6                | the lane: page 1 at + 6 (LFO, then AMP at + 12)
+        .set    CV_P2, 38                | ... page 2's PMTR / WAVE at + 38, AMP SETUP at + 44
+        .set    CV_MT, 62                | ... MULT / TRIG at + 62
+ml_reset:
+        lea     -48(%sp),%sp
+        movem.l %d0-%d5/%a0-%a5,(%sp)
+        bsr     ml_part                  | a0 = the Part
+        move.l  %a0,%d3
+        sub.l   PART_PTR,%d3
+        lea     PART_SHADOW,%a1
+        adda.l  %d3,%a1                  | a1 = its shadow
+        move.l  %d2,%d3
+        mulu.w  #CV_STRIDE,%d3
+        addi.l  #CURVALS,%d3
+        movea.l %d3,%a2                  | a2 = the track's live lane
+        move.l  %d2,%d3
+        lsl.l   #6,%d3
+        addi.l  #CV_WORDS,%d3
+        movea.l %d3,%a3                  | a3 = its value words
+        move.l  %d0,%d4                  | the machine
+        beq     ml_rs_stock
+        bsr     ml_kindrow               | a5 = the row's descriptor
+        movea.l RD_SEEDS(%a5),%a5        | its seeds: 6 PLAYBACK, then 6 SETUP
+        moveq   #FLEX,%d1
+        moveq   #1,%d3
+        bsr     ml_column                | the FLEX column, the lane's too
+        bra     ml_rs_pages
+ml_rs_stock:
+        move.l  %d1,%d5                  | the stock machine
+        moveq   #FLEX,%d1
+        movea.l PB_TABLE+4*FLEX,%a5
+        lea     DEF1(%a5),%a5            | FLEX's defaults
+        moveq   #0,%d3
+        bsr     ml_column                | the FLEX column (Part and shadow)
+        move.l  %d5,%d1
+        lea     PB_TABLE,%a5             | the machine -> PLAYBACK descriptor table
+        movea.l (%a5,%d1.l*4),%a5
+        lea     DEF1(%a5),%a5            | the machine's defaults
+        moveq   #1,%d3
+        bsr     ml_column                | its column, the lane's too
+ml_rs_pages:
+        move.l  %d2,%d3
+        lsl.l   #3,%d3
+        move.l  %d3,%d0
+        add.l   %d3,%d3
+        add.l   %d0,%d3                  | track * 24
+        addi.l  #PAGE1_OFF,%d3
+        lea     LFO_P+DEF1,%a4           | the LFO page: SPD1..3 DEP1..3
+        moveq   #0,%d1
+ml_rs_lfo:
+        mvz.b   (%a4)+,%d0
+        cmpi.l  #1,%d4
+        bne     ml_rs_lfo1               | FM SYNTH: SPD3 = VOIC 1, DEP3 = CHRD off
+        cmpi.l  #2,%d1
+        bne     ml_rs_chrd
+        moveq   #1,%d0
+ml_rs_chrd:
+        cmpi.l  #5,%d1
+        bne     ml_rs_lfo1
+        moveq   #0,%d0
+ml_rs_lfo1:
+        bsr     ml_p1byte
+        addq.l  #1,%d1
+        cmpi.l  #6,%d1
+        bne     ml_rs_lfo
+        lea     AMP_P+DEF1,%a4           | the AMP page: ATK HOLD REL VOL BAL XVOL
+ml_rs_amp:
+        mvz.b   (%a4)+,%d0
+        bsr     ml_p1byte
+        addq.l  #1,%d1
+        cmpi.l  #12,%d1
+        bne     ml_rs_amp
+        move.l  %d2,%d3
+        lsl.l   #5,%d3
+        sub.l   %d2,%d3
+        sub.l   %d2,%d3                  | track * 30
+        addi.l  #PAGE2_OFF,%d3
+        moveq   #0,%d1                   | page 2's bytes 0..5: PMTR / WAVE of LFO 1..3
+        lea     LFO_P+DEF1+6,%a4         | (the LFO page's slot 6 / 7 defaults: PMTR, WAVE)
+        bsr     ml_p2pairs
+        lea     AMP_P+DEF1+6,%a4         | 6..11: AMP SETUP
+ml_rs_amps:
+        mvz.b   (%a4)+,%d0
+        bsr     ml_p2byte
+        addq.l  #1,%d1
+        cmpi.l  #12,%d1
+        bne     ml_rs_amps
+        moveq   #24,%d1                  | 24..29: MULT / TRIG of LFO 1..3
+        lea     LFO_P+DEF1+8,%a4         | (slot 8 / 9 defaults: MULT, TRIG)
+        bsr     ml_p2pairs
+        move.l  %d2,%d0
+        lsl.l   #5,%d0
+        addi.l  #CV_SLEW,%d0
+        movea.l %d0,%a4                  | the slew counters of lane bytes 0..19 (a long per four)
+        clr.l   (%a4)+
+        clr.l   (%a4)+
+        clr.l   (%a4)+
+        clr.l   (%a4)+
+        clr.l   (%a4)
+        .if     HAVE_SYDRUM
+        jsr     sd_clear_locks           | (d2) SY DRUM's step locks of the track
+        .endif
+        movem.l (%sp),%d0-%d5/%a0-%a5
+        lea     48(%sp),%sp
+        rts
+| ml_column: d1 = a machine's column, d2 = track, a5 = 12 bytes (6 PLAYBACK, 6 SETUP), d3 = 1
+| to write the live lane (a2) and the value words (a3) too, a0 / a1 = the Part / shadow ->
+| the column's PLAYBACK and SETUP bytes written. Clobbers d0 only.
+ml_column:
+        lea     -12(%sp),%sp
+        movem.l %d1/%d4-%d5,(%sp)
+        move.l  %d2,%d0
+        mulu.w  #30,%d0
+        move.l  %d1,%d4
+        mulu.w  #6,%d4
+        add.l   %d4,%d0
+        addi.l  #PB_OFF,%d0              | the column's PLAYBACK bytes
+        move.l  %d0,%d5
+        addi.l  #SETUP_GAP,%d5           | its SETUP bytes
+        moveq   #0,%d1
+ml_cl_byte:
+        mvz.b   (%a5,%d1.l),%d4
+        move.b  %d4,(%a0,%d0.l)          | PLAYBACK k: the Part,
+        move.b  %d4,(%a1,%d0.l)          | its shadow
+        tst.l   %d3
+        beq     ml_cl_setup
+        move.b  %d4,(%a2,%d1.l)          | the lane
+        lsl.l   #8,%d4
+        move.w  %d4,(%a3,%d1.l*2)        | its value word
+ml_cl_setup:
+        mvz.b   6(%a5,%d1.l),%d4
+        move.b  %d4,(%a0,%d5.l)          | SETUP k: the Part,
+        move.b  %d4,(%a1,%d5.l)          | its shadow
+        tst.l   %d3
+        beq     ml_cl_next
+        move.b  %d4,CV_SETUP(%a2,%d1.l)  | the lane
+ml_cl_next:
+        addq.l  #1,%d0
+        addq.l  #1,%d5
+        addq.l  #1,%d1
+        cmpi.l  #6,%d1
+        bne     ml_cl_byte
+        movem.l (%sp),%d1/%d4-%d5
+        lea     12(%sp),%sp
+        rts
+| ml_p1byte: d0 = a value, d1 = page 1's slot 0..11 (LFO, AMP), d3 = the track's page 1 in
+| the Part -> the Part, the shadow, the lane (+ 6 + slot) and the value word written.
+ml_p1byte:
+        move.l  %d3,-(%sp)
+        add.l   %d1,%d3
+        move.b  %d0,(%a0,%d3.l)
+        move.b  %d0,(%a1,%d3.l)
+        move.b  %d0,CV_LFO(%a2,%d1.l)
+        lsl.l   #8,%d0
+        move.w  %d0,2*CV_LFO(%a3,%d1.l*2)
+        move.l  (%sp)+,%d3
+        rts
+| ml_p2byte: d0 = a value, d1 = page 2's byte 0..29, d3 = the track's page 2 in the Part ->
+| the Part, the shadow and the lane (+ 38 + byte; MULT / TRIG at + 62) written.
+ml_p2byte:
+        move.l  %d3,-(%sp)
+        add.l   %d1,%d3
+        move.b  %d0,(%a0,%d3.l)
+        move.b  %d0,(%a1,%d3.l)
+        move.l  (%sp)+,%d3
+        cmpi.l  #24,%d1
+        bcc     ml_p2_mt
+        move.b  %d0,CV_P2(%a2,%d1.l)
+        rts
+ml_p2_mt:
+        move.b  %d0,CV_MT-24(%a2,%d1.l)
+        rts
+| ml_p2pairs: a4 = two defaults (a, b), d1 = page 2's first byte -> bytes d1 .. d1 + 5 =
+| a b a b a b, as the stock initialiser writes them (`slot & 1` picks the default); d1 += 6.
+ml_p2pairs:
+        moveq   #3,%d5
+ml_pp_lfo:
+        mvz.b   (%a4),%d0
+        bsr     ml_p2byte
+        addq.l  #1,%d1
+        mvz.b   1(%a4),%d0
+        bsr     ml_p2byte
+        addq.l  #1,%d1
+        subq.l  #1,%d5
+        bne     ml_pp_lfo
+        rts
+| ml_kindrow: d0 = a row's engine kind -> a5 = its descriptor in ml_rows (the first row
+| when none matches). Preserves every other register.
+ml_kindrow:
+        move.l  %d1,-(%sp)
+        moveq   #0,%d1
+ml_kr_row:
+        lea     ml_rows(%pc),%a5
+        movea.l (%a5,%d1.l*4),%a5
+        cmp.b   RD_KIND(%a5),%d0
+        beq     ml_kr_out
+        addq.l  #1,%d1
+        cmpi.l  #ML_COUNT,%d1
+        bne     ml_kr_row
+        lea     ml_rows(%pc),%a5
+        movea.l (%a5),%a5
+ml_kr_out:
+        move.l  (%sp)+,%d1
         rts
 | ml_sigrow: a0 = a signature's place -> d0 = the index in ml_rows of the row whose
 | signature it holds, else -1; tst.l done (bmi: none). Preserves every other register.
