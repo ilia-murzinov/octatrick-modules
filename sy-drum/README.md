@@ -22,9 +22,11 @@ SYNTH mechanism; synth/README.md, "Selecting FM SYNTH from the machine list"): n
 PLAYBACK page reads `PTCH MODE WDTH SWEP SPED DEC`, the title and footer `SY DRUM`, and both lists open on the
 `SY DRUM` row. Choosing it on a track that does not play SY DRUM yet sets the knobs to PTCH 0, MODE A, WDTH 64,
 SWEP 0, SPED 64, DEC 64 and the setup to LSPD 64, LDEP 0, WAVE OFF, S&H OFF; choosing it again keeps the patch.
-Choosing any other row clears the mark and puts the stock FLEX setup values back (LSPD .. S&H are no sample
-settings). The choice is a Part byte like the machine: saved with the Part and the project, copied and pasted
-with the Part.
+Choosing any other row clears the mark. **A machine change resets the track to the new machine's init; the FX
+slots are kept** (2.12): to or from SY DRUM, the PLAYBACK and SETUP pages, AMP and AMP SETUP, the three LFOs and
+LFO SETUP get the new machine's values (a stock machine's: a new project's) and the track's step locks are removed
+(synth/README.md, "A machine change resets the track to the new machine's init"). The choice is a Part byte like
+the machine: saved with the Part and the project, copied and pasted with the Part.
 
 **Downgrading**: a build without SY DRUM reads such a track as a plain FLEX track with no sample (silent); the stock
 loader then clamps its PLAYBACK / SETUP bytes into FLEX's ranges. Choose a stock machine and SAVE before flashing
@@ -93,8 +95,10 @@ gets a lock, starting from its own lock or, if it has none, from the Part's valu
 value: the effective value is the Part's default, then the step's lock (clamped to LSPD 127, LDEP 127, WAVE 3,
 S&H 1). A step whose only locks are these is a lock trig (trigless): it changes the values without a new note.
 Conditional trigs the stock sequencer rejects apply no lock. The locks belong to bank, pattern, audio track and
-step; they are applied only while the track plays SY DRUM (a track switched to another machine keeps them, unheard,
-and they come back with SY DRUM).
+step; they are applied only while the track plays SY DRUM. Since 2.12 a machine change of the track (to or from SY
+DRUM, FM SYNTH or a marker) removes its locks in every pattern of the bank that plays the current Part -- the
+patterns in which its machine changed; patterns of another Part keep theirs. (2.11 kept them, unheard, and they
+came back with SY DRUM.)
 
 **Copy, paste, clear.** The locks travel with the step in every stock sequence edit: a held trig's copy / paste /
 clear, a page's or a track's or a pattern's copy / paste / clear and their undo, the shift of a track's trigs, the

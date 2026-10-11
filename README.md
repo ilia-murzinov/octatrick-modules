@@ -67,7 +67,13 @@ to watch.
   selector, as it is on every sample track.
   Since 2.11 the rows after PICKUP are a table the remix fills (FM SYNTH
   always, SY DRUM when the remix has it) and SELECT MACHINE TYPE scrolls
-  when there are more than six rows. `synth/README.md`.
+  when there are more than six rows. Since 2.12 a machine change resets
+  the track to the new machine's init; FX slots are kept: to or from FM
+  SYNTH or SY DRUM (either list, or a marker file), PLAYBACK and its
+  SETUP, AMP and AMP SETUP, the three LFOs and LFO SETUP get the new
+  machine's values -- a stock machine's are a new project's -- and SY
+  DRUM's step locks of the track go; a change between stock machines is
+  stock's. `synth/README.md`.
 - **`sy-drum/`** (key `SY DRUM`, since 2.11; requires `SYNTH MACHINE`) -- a
   drum machine in the machine list, the row after FM SYNTH: a two-oscillator
   percussion voice with a sweep, a filter opened by the decay, six modes
@@ -220,6 +226,18 @@ Only tagged versions are releases; the numbered builds between two tags
 (2.3 .. 2.7 on the way to 2.8, the 2.9 builds before the tag) were test
 builds on the author's unit and were never tagged.
 
+- 2.12 (not tagged yet): a machine change resets the track to the new
+  machine's init; FX slots are kept. When a track's machine changes to or
+  from FM SYNTH or SY DRUM -- in SELECT MACHINE TYPE, SRC SETUP or through a
+  marker file -- its PLAYBACK and PLAYBACK SETUP pages, AMP and AMP SETUP,
+  the three LFOs and LFO SETUP (FM SYNTH: VOIC 1, CHRD off) take the new
+  machine's init, the values a new project gives a track (read from the
+  OS's own page records), and SY DRUM's step locks of the track are removed
+  in the patterns of the bank that play that Part; FX1 / FX2 stay. Nothing
+  inherits from the machine before (2.11 kept the FM values in the FLEX
+  page, every AMP and LFO setting, and the locks). A change between stock
+  machines is unchanged, and so is a project load: 2.10 / 2.11 projects
+  load as they were saved. The engine is unchanged.
 - 2.11 (tag `v2.11`, 9 Oct 2026): two new modules and the machine list
   they share. THE MACHINE LIST for more than one machine: the rows after
   PICKUP are a table filled per remix (FM SYNTH, then SY DRUM), the six
