@@ -300,8 +300,8 @@ ml_flexslot:
 |     bytes from the LFO page's slot 6 / 7 defaults and the six MULT / TRIG bytes from its
 |     slot 8 / 9 defaults, alternately, as the initialiser writes them);
 |     FM SYNTH: VOIC 1 and CHRD off in LFO 3's SPD3 / DEP3 bytes;
-|   * SY DRUM's step locks of the track (sd_clear_locks), when the remix carries it.
 | FX1 / FX2 (their effect, page and setup bytes) are kept: effect slots, not the machine's.
+| Step locks, scene locks and SY DRUM's own lock rows are kept, as at a stock machine change.
 | The live lane gets the bytes written (its PLAYBACK, SETUP, page-1 and page-2 bytes, the
 | page-1 value words byte << 8, their slew counters cleared): the stock machine change
 | reloads a track from its Part only for PICKUP (0x400972fc -> 0x40001f18), and the frame
@@ -413,9 +413,6 @@ ml_rs_amps:
         clr.l   (%a4)+
         clr.l   (%a4)+
         clr.l   (%a4)
-        .if     HAVE_SYDRUM
-        jsr     sd_clear_locks           | (d2) SY DRUM's step locks of the track
-        .endif
         movem.l (%sp),%d0-%d5/%a0-%a5
         lea     48(%sp),%sp
         rts
