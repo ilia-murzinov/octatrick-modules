@@ -35,7 +35,6 @@
         .global sy1_kind, sy1_leg_pending, sy1_mono_trigger, sy1_mono_frame, sy1_mono_key_frame
         .global sy1_mono_render, sd_trigger, sd_tick, sd_row, sd_page, sy1_pgdesc
         .global sd_sig, sd_kind, sd_setup_edit
-        .global sd_clear_locks           | 2.12: a machine change clears the track's step locks (synth/machine.s ml_reset)
         .set    FLEX, 1
         .set    PLAY_SETUP, 0x8ef60      | Part + 30 * track: the FLEX SETUP bytes (LOOP SLIC LEN RATE TSTR TSNS)
         .set    LANE_SETUP, 0x80000830   | + 72 * track: the live lane's six SETUP bytes
@@ -233,92 +232,6 @@ sd_kd_no1:
 sd_kd_no:
         movea.l (%sp)+,%a0
         moveq   #0,%d0
-        rts
-
-| sd_clear_locks (2.12): d2 = track -> SY DRUM's step locks of the track (controls A..D: LSPD
-| LDEP WAVE S&H) removed in every pattern of the current bank that plays the current Part --
-| the patterns in which the track's machine has just changed (synth/machine.s ml_reset, at a
-| machine change to or from SY DRUM, FM SYNTH or a marker). A pattern of another Part keeps its
-| rows: there the track still plays the machine that Part names. Rows are removed as GRID
-| RECORDING's edits remove them (sl_write 255: the bank's file is marked dirty, written at the
-| next save), only where a row holds one of the four; a bank whose table is not ready or is
-| blocked (a file this module could not read) is left alone (sl_write refuses). The E / F and
-| G..J controls (the development line's machines) are carried, as everywhere in this module.
-| The sequencer's copies of the track's rows go too (locks_seq: the active and pending rows,
-| the three accepted-event queues' and the scratch entries): the stock queue holds the next
-| step's events while the transport is stopped, and its snapshot of an old row would play
-| once at PLAY (found on the emulator: a project loaded with a lock on step 1, the machine
-| changed twice, then PLAY -- every note of the track differed from a fresh track's).
-| Every register kept.
-        .set    PAT_STRIDE, 0x8ed8       | the bank blob + pattern * this ...
-        .set    PAT_PART, 0x8e57         | ... + this: the pattern's Part (0..3)
-        .set    BANK_IDX, 0x100b14ce     | the current bank (the lock UI's)
-sd_clear_locks:
-        lea     -40(%sp),%sp
-        movem.l %d0-%d6/%a0-%a2,(%sp)
-        movea.l PART_PTR,%a1
-        cmpa.l  #0x40000000,%a1          | no bank yet (boot): nothing
-        bcs     sd_cl_out
-        cmpa.l  #0x48000000,%a1
-        bcc     sd_cl_out
-        mvz.b   PART_IDX,%d6             | the current Part
-        moveq   #0,%d1                   | the pattern
-sd_cl_pattern:
-        move.l  #PAT_STRIDE,%d0
-        mulu.l  %d1,%d0
-        adda.l  #PAT_PART,%a1
-        mvz.b   (%a1,%d0.l),%d0          | its Part
-        suba.l  #PAT_PART,%a1
-        cmp.l   %d6,%d0
-        bne     sd_cl_next
-        moveq   #0,%d3                   | the step
-sd_cl_step:
-        mvz.b   BANK_IDX,%d0
-        jsr     sl_row:l                 | a0 = the row (bank, pattern, track, step)
-        move.l  (%a0),%d4                | A..D
-        moveq   #-1,%d5
-        cmp.l   %d5,%d4
-        beq     sd_cl_snext              | none of the four
-        moveq   #0,%d4                   | the control
-        move.l  #255,%d5                 | no lock
-sd_cl_control:
-        mvz.b   BANK_IDX,%d0
-        jsr     sl_write:l
-        addq.l  #1,%d4
-        cmpi.l  #4,%d4
-        bne     sd_cl_control
-sd_cl_snext:
-        addq.l  #1,%d3
-        cmpi.l  #64,%d3
-        bne     sd_cl_step
-sd_cl_next:
-        addq.l  #1,%d1
-        cmpi.l  #16,%d1
-        bne     sd_cl_pattern
-        move.w  %sr,%d6                  | the sequencer's copies of the track's rows, with the interrupts off:
-        move.w  #0x2700,%sr              | (the frame interrupt consumes them)
-        jsr     sl_seq_clear_track:l     | its active and pending rows (locks_seq; clobbers d0 / a0)
-        moveq   #0,%d1
-sd_cl_queue:
-        move.l  %d1,%d0                  | the three accepted-event queues' entries of the track: a snapshot
-        lsl.l   #3,%d0                   | taken before the change (the stock queue holds the next step while
-        add.l   %d2,%d0                  | the transport is stopped) would play the old rows once
-        lsl.l   #4,%d0
-        lea     sl_seq_queue:l,%a0
-        adda.l  %d0,%a0
-        jsr     sl_seq_empty_a0:l
-        addq.l  #1,%d1
-        cmpi.l  #3,%d1
-        bne     sd_cl_queue
-        move.l  %d2,%d0
-        lsl.l   #4,%d0
-        lea     sl_seq_scratch:l,%a0     | ... and its scratch entry
-        adda.l  %d0,%a0
-        jsr     sl_seq_empty_a0:l
-        move.w  %d6,%sr
-sd_cl_out:
-        movem.l (%sp),%d0-%d6/%a0-%a2
-        lea     40(%sp),%sp
         rts
 
 | The development line's sy1_setup_tick: every track's four SETUP controls from the Part, clamped,
