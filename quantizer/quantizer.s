@@ -513,10 +513,10 @@ qz_mplock:
         cmpi.l  #0xff,%d2
         jbne    qz_mp_go                | a lock: step from it
         move.l  %a0,-(%sp)              | none: from the Part's NOTE
-        movea.l PARTS,%a0
-        mvz.b   0x100b14cf,%d2
-        move.l  #6322,%d0
+        move.l  #6322,%d0               | a Part's size
+        mvz.b   0x100b14cf,%d2          | the Part
         muls.l  %d0,%d2
+        movea.l PARTS,%a0
         adda.l  %d2,%a0                 | the Part
         mvz.b   UI_TRACK,%d2
         lsl.l   #5,%d2
