@@ -173,7 +173,7 @@ raw = 64 + (key - 12) + 12 * octave with the octave qz_oct, -4..+4, stepped
 by FUNC + LEFT / RIGHT (qz_octkey at 0x40045918) while stock's 0/1 octave
 word is held at 0 on such a track (qz_keyidx at the handler's caller
 0x40050254, qz_octdraw in the drawer 0x40044968) and the number beside the
-keyboard prints qz_oct (qz_octnum, 0x400449b8, stock's "%d"). MIDI IN on
+keyboard prints qz_oct (qz_octnum, 0x400449be since 2.13, stock's "%d"). MIDI IN on
 a synth track is modules/synth's (30 Sep 2026: its po_mon at the block's
 START 0x4000e746 replaced this module's qz_midi at 0x4000e74c). Sample tracks: the displaced
 instructions, byte for byte.
@@ -271,8 +271,10 @@ MODULE = Module(
         Detour(0x40044968, H("7201" "b2b9460d16fc"), "qz", "qz_octdraw",
                "CHROMATIC drawer: a synth track draws the keyboard at stock octave 0 (the word is cleared)",
                kind="jmp", pad_to=8),
-        Detour(0x400449b8, H("2039460d16fc" "2f00"), "qz", "qz_octnum",
-               "CHROMATIC drawer: the octave number beside the keyboard is qz_oct on a synth track, the position 0 / 1 / -1 on a sample track, with ROOT's name before it when a scale is on",
+        Detour(0x400449be, H("2f00" "4879400b465d"), "qz", "qz_octnum",
+               "CHROMATIC drawer, the common push of the octave number both branches reach (2.13, Modwerk #264: the MIDI branch "
+               "jumps here, so the push is never skipped): a MIDI track keeps stock's number, a synth track prints qz_oct, a sample "
+               "track the position 0 / 1 / -1, with ROOT's name before it when a scale is on",
                kind="jmp", pad_to=8),
         Detour(0x40065bca, H("4282" "4fef0020"), "qz", "qz_draw",
                "SEQUENCER window draw loop: index the row tables from the scroll offset",

@@ -694,7 +694,7 @@ qz_cs_lo_ok:
 | Stock keeps ONE octave word for the keyboard, OCT_WORD, 0 or 1: FUNC + LEFT
 | or RIGHT eor it (0x40045918), the key handler's caller adds 12 * word to the
 | key (0x40050254) and the drawer picks the 16- or 13-key picture by it
-| (0x40044968), prints it with "%d" (0x400449b8) and places the held-key marks
+| (0x40044968), prints it with "%d" (0x400449be) and places the held-key marks
 | with it (0x40044abe). On a synth track the octave is qz_oct instead, -4..+4:
 | the stock word is held at 0 there (the key index stays the physical key,
 | the marks land on the keys, the 16-key picture shows), qz_chrom adds the 12
@@ -761,20 +761,33 @@ qz_od_cmp:
         cmp.l   OCT_WORD,%d1            | displaced
         jmp     0x40044970
 
-| 0x400449b8, the number beside the keyboard: `movel OCT_WORD,%d0; movel
-| %d0,%sp@-` (8 bytes) -> jmp qz_octnum; the value is printed by stock's own
-| "%d" (0x400b465d) at 0x400449c0 -- the formatter 0x40013904 takes (ctx,
-| font, x 0x44, y 9, 1, 0, buf 0x400b527d, fmt, value) and 0x400449ec pops
-| the nine -- so a synth track's -4..+4 prints as is. With a scale on (28 Sep
-| 2026) the format is this unit's qz_ofmt, ROOT's name + " %d" ("A %d"), pushed
-| in place of stock's, the continuation at 0x400449c6: same nine arguments.
+| 0x400449be, the number beside the keyboard: `movel %d0,%sp@-; pea
+| 0x400b465d` (8 bytes, the octave and stock's "%d") -> jmp qz_octnum. The
+| drawer reaches 0x400449be from BOTH branches: the audio one loads OCT_WORD
+| into d0 at 0x400449b8 and falls through, the MIDI one (0x400449a6: `tstl
+| 0x80000012`) loads stock's MIDI octave word 0x400beba2 - 1 into d0 and
+| branches straight here. The value is printed by the formatter 0x40013904
+| (ctx, font, x 0x44, y 9, 1, 0, buf 0x400b527d, fmt, value), and 0x400449ec
+| pops the nine -- so a synth track's -4..+4 prints as is. With a scale on
+| (28 Sep 2026) the format is this unit's qz_ofmt, ROOT's name + " %d" ("A
+| %d"), pushed in place of stock's; the continuation is 0x400449c6 on every
+| path: same nine arguments.
+| 2.13 (Modwerk #264): until 2.12 this detour sat at 0x400449b8, the audio
+| branch's load, and 0x400449be was its pad. Stock's MIDI branch jumps to
+| 0x400449be, so on a MIDI track the octave push was skipped, the drawer's
+| call ran one argument short and the unit froze when CHROMATIC was entered
+| (every public tag since the ROOT round, 2.9 .. 2.12). Modwerk found it and
+| its bundled quantizer moved the detour to the common push; this is that
+| form: the push is ours on both branches, a MIDI track's d0 is stock's.
 qz_octnum:
+        tst.l   0x80000012              | MIDI: stock already loaded its octave into d0
+        jbne    qz_on_stockfmt          | (an audio track's octave or scale is not read)
         jbsr    qz_ui_synth
         jbeq    qz_on_stock
         mvs.b   qz_oct,%d0              | the synth track's octave (keys.s, pinned)
         jbra    qz_on_out
 qz_on_stock:
-        move.l  OCT_WORD,%d0            | displaced: a sample track's position, 0 or 1
+        move.l  OCT_WORD,%d0            | as 0x400449b8: a sample track's position, 0 or 1
         jbeq    qz_on_out               | the default position: 0
         lea     qz_scale,%a0
         tst.b   (%a0)
@@ -802,10 +815,13 @@ qz_on_copied:
         move.b  #37,(%a0)+              | '%'
         move.b  #100,(%a0)+             | 'd'
         clr.b   (%a0)
-        pea     qz_ofmt(%pc)            | the format, in place of stock's pea "%d" at 0x400449c0
+        pea     qz_ofmt(%pc)            | the format, in place of stock's "%d"
         jmp     0x400449c6
+qz_on_stockfmt:
+        move.l  %d0,-(%sp)              | displaced: the number, stock's MIDI octave as stock pushes it
 qz_on_fmt:
-        jmp     0x400449c0
+        pea     FMT_D                   | displaced: stock's "%d"
+        jmp     0x400449c6
 
 | ---- GLIDE legato: two jmp detours in the same handler --------------------------
 | 0x4004fb94 keeps ONE held key per track (HELD + track = key + 1). Stock, a
