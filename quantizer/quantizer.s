@@ -146,7 +146,7 @@
         .global qz_leg0, qz_leg3, qz_leg4, qz_leg5
         .global qz_get_root, qz_set_root, qz_lbl_root
         .global qz_keyidx, qz_octkey, qz_octdraw, qz_octnum
-        .global qz_mknob, qz_mplock
+        .global qz_mknob, qz_mplock, qz_mkey
         .set    OCT_WORD, 0x460d16fc      | stock's CHROMATIC octave word: 0 or 1 (FUNC + LEFT/RIGHT eor it)
         .set    KEYS_AT, 0x400d2cb0       | keys.s, pinned (manifest KEYS_AT): the paraphonic key mailbox
         .set    qz_pkey, KEYS_AT          |   the live key (index + 1) per track, 8 bytes
@@ -886,9 +886,11 @@ qz_od_cmp:
 | (every public tag since the ROOT round, 2.9 .. 2.12). Modwerk found it and
 | its bundled quantizer moved the detour to the common push; this is that
 | form: the push is ours on both branches, a MIDI track's d0 is stock's.
+| A MIDI track (2.13): stock's number, with ROOT's name before it when a
+| scale is on ("A 3": qz_mkey makes key 1 the root at that octave).
 qz_octnum:
-        tst.l   0x80000012              | MIDI: stock already loaded its octave into d0
-        jbne    qz_on_stockfmt          | (an audio track's octave or scale is not read)
+        tst.l   MIDI_MODE               | MIDI: stock already loaded its octave into d0
+        jbne    qz_on_out               | (an audio track's octave is not read)
         jbsr    qz_ui_synth
         jbeq    qz_on_stock
         mvs.b   qz_oct,%d0              | the synth track's octave (keys.s, pinned)
@@ -924,11 +926,94 @@ qz_on_copied:
         clr.b   (%a0)
         pea     qz_ofmt(%pc)            | the format, in place of stock's "%d"
         jmp     0x400449c6
-qz_on_stockfmt:
-        move.l  %d0,-(%sp)              | displaced: the number, stock's MIDI octave as stock pushes it
 qz_on_fmt:
         pea     FMT_D                   | displaced: stock's "%d"
         jmp     0x400449c6
+
+| ---- (2.13) the CHROMATIC keys of a MIDI track: jmp planted at 0x400436a8 ---------
+| 0x40043664(track, note, press) plays a MIDI track's CHROMATIC key: its caller
+| (0x40050226) made the note key + 12 * stock's octave word 0x400beba2 (4 at
+| boot: key 1 = 48 = C3). On a press stock has checked note <= 127 and taken
+| the key's held slot d2 = note & 15; at 0x400436a8 it pushes the event flag
+| (`pea 1`) and then calls 0x4009e9a8(track, note, the Part's VEL, 1) -- the
+| note-on, or the arpeggiator's add with ARP MODE on -- and stores held[d2] =
+| note + 1 (0x460d170c), which the release turns back into the note-off; the
+| live recorder records the note it was given (event 0x46). With a scale on
+| the note becomes the keyboard's own rule (qz_chrom's, the synth track's):
+| note + ROOT (at most 127), then the nearest scale note, ties down -- key 1
+| sounds the root, every key a note of the scale. The note-on, the arp, held[]
+| (so the note-off) and the recorder all carry it; the release needs no hook.
+| Registers: d3 = the note, d4 = track, d2 = the slot; d0 / d1 / a0 / a1 are
+| free (d5 is not: stock's `movew #6322,%d5` keeps its upper half).
+qz_mkey:
+        mvz.b   NV_SCALE,%d0
+        jbeq    qz_mky_replay           | OFF: stock
+        mvz.b   NV_ROOT,%d0
+        add.l   %d3,%d0                 | + ROOT: key 1 sounds the root
+        moveq   #127,%d1
+        cmp.l   %d1,%d0
+        jble    qz_mky_snap
+        move.l  %d1,%d0                 | the MIDI ceiling
+qz_mky_snap:
+        jbsr    qz_msnap
+        move.l  %d0,%d3
+qz_mky_replay:
+        pea     1                       | displaced: the event flag
+        mvz.b   0x100b14cf,%d1          | displaced: the Part
+        jmp     0x400436b2
+
+| qz_msnap: d0 := the MIDI note nearest to note d0 (0..127) whose pitch class
+| (note mod 12, C = 0) is in the scale's ROOT-rotated mask (SCALE_AT), the
+| lower candidate first at each distance (ties go down: qz_chrom's and the
+| synth's po_snap's rule), within 0..127. SCALE is on. Clobbers d1, a0, a1.
+qz_msnap:
+        lea     -12(%sp),%sp
+        movem.l %d2-%d4,(%sp)
+        move.l  %d0,%d2                 | n
+        jsr     SCALE_AT                | d0 = the mask (clobbers a0, d0)
+        move.l  %d0,%d3
+        move.l  %d2,%d1
+        moveq   #12,%d4
+        divu.l  %d4,%d1
+        mulu.l  %d4,%d1
+        move.l  %d2,%d0
+        sub.l   %d1,%d0
+        move.l  %d0,%a1                 | a1 = n's pitch class
+        moveq   #0,%d4                  | distance 0, 1, 2 ...
+qz_ms_loop:
+        move.l  %d2,%d1
+        sub.l   %d4,%d1                 | the lower candidate first
+        jbmi    qz_ms_hi                | (below note 0: none)
+        move.l  %a1,%d0
+        sub.l   %d4,%d0
+        jbpl    qz_ms_lo
+        addi.l  #12,%d0
+qz_ms_lo:
+        btst    %d0,%d3
+        jbne    qz_ms_found
+qz_ms_hi:
+        move.l  %d2,%d1
+        add.l   %d4,%d1                 | then the upper
+        cmpi.l  #127,%d1
+        jbgt    qz_ms_next              | (above note 127: none)
+        move.l  %a1,%d0
+        add.l   %d4,%d0
+        cmpi.l  #12,%d0
+        jblt    qz_ms_up
+        subi.l  #12,%d0
+qz_ms_up:
+        btst    %d0,%d3
+        jbne    qz_ms_found
+qz_ms_next:
+        addq.l  #1,%d4
+        cmpi.l  #11,%d4
+        jble    qz_ms_loop
+        move.l  %d2,%d1                 | no degree at all: cannot happen (every mask has the root)
+qz_ms_found:
+        move.l  %d1,%d0
+        movem.l (%sp),%d2-%d4
+        lea     12(%sp),%sp
+        rts
 
 | ---- GLIDE legato: two jmp detours in the same handler --------------------------
 | 0x4004fb94 keeps ONE held key per track (HELD + track = key + 1). Stock, a
