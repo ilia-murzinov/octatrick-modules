@@ -120,13 +120,20 @@ images were never affected.
 
 | site | stock bytes (displaced) | kind | stub | what |
 |---|---|---|---|---|
-| `0x4005538a` knob handler, the MIDI tracks' store | `1a82 223c 000018b2` -- `move.b %d2,(%a5); move.l #6322,%d1` | jsr + nop | `qz_mknob` | NOTE (flat 0, slot named `NOTE`): d2 := the old Part byte stepped by scale degree (`qz_quantm`); then both |
+| `0x40055382` knob handler, the MIDI tracks' clamp to the max, just before the store `0x4005538a` | `2400 b280 6c02 2401` -- `move.l %d0,%d2; cmp.l %d0,%d1; bge.s 0x4005538a; move.l %d1,%d2` | jsr + nop | `qz_mknob` | the four (d2 := the value capped at the max); then NOTE (flat 0, slot named `NOTE`): d2 := the old Part byte stepped by scale degree (`qz_quantm`); d0 / d1 / a0 / a1 as stock leaves them; the store at `0x4005538a` stays stock |
 | `0x40050b98` MIDI p-lock editor, the lock store | `1144 4900 73b9 100b14cc` -- `move.b %d4,(18688,%a0); mvz.b 0x100b14cc,%d1` | jsr + 2 nops | `qz_mplock` | NOTE: d4 := the old lock (or the Part's NOTE when 0xff) stepped; then both |
 | `0x400436a8` MIDI CHROMATIC key, the press | `4878 0001 73b9 100b14cf` -- `pea 1; mvz.b 0x100b14cf,%d1` | jmp + 2 nops | `qz_mkey` | d3 := `qz_msnap`(min(127, note + ROOT)); both; `jmp 0x400436b2` |
 | `0x400449be` CHROMATIC drawer, the common push | `2f00 4879 400b465d` -- `move.l %d0,-(%sp); pea 0x400b465d` | jmp + nop | `qz_octnum` | MIDI: stock's number, `"<ROOT> %d"` with a scale on; audio: as 2.12; `jmp 0x400449c6` |
 
-No branch in the stock code lands inside any of the three new sites, and
-no other module of the octatrick remix hooks within 16 bytes of them.
+No branch in the stock code lands inside any of the three new sites (the
+`bge.s` the knob site displaces targets `0x4005538a`, the instruction
+after the site), and no other module of the octatrick remix hooks within
+16 bytes of them. The knob's hook sits one step before the store rather
+than on it because octabam's MIDI SCENES module (scene locks for the MIDI
+tracks) detours the store `0x4005538a` itself; with the hook at
+`0x40055382` the two share a remix: this module decides the value, MIDI
+SCENES' detour stores it and runs its mix. (A MIDI SCENES scene lock on
+NOTE is set with a scene key held, a path of its own, and is not snapped.)
 
 **Measured** (the pinned emulator, the octatrick remix with SY DRUM and
 PROCESSOR LOAD on octabam 063a426; MIDI OUT captured as the bytes the
@@ -154,12 +161,29 @@ unit's MIDI port transmits; expected values from a model of the rules):
   ROOT settings and both keyboard octaves: equal to 2.12 value for value; the
   readout beside the sample keyboard pixel-equal; the FM synth harness
   512 / 512 with the same state as 2.12 (the synth is not changed).
-- Cost (emulator instruction counts, not a hardware share): a MIDI
-  CHROMATIC press 6 instructions with SCALE OFF (stock 2), 49..76 with a
-  scale on; a NOTE knob turn 8 (stock 2), 100..224 with a scale on (1..3
-  clicks); a NOTE lock turn 8, 117..252; the sequencer tick is not
-  hooked (mean 1,138, max 2,540 on a chord trig, equal to 2.12). The DRAM
-  unit grew by 376 B (3,576 -> 3,952 B); no ROM byte changed.
+- With MIDI SCENES (a scratch remix of this module, the synth, MIDI
+  SCENES and STORE on current octabam; the ledger accepts it, and refused
+  it while this module's hook sat on the store itself): the NOTE knob gate above 409 of 409
+  and the LIVE RECORDING lock as above; two clicks up from C#3 under MINOR
+  A store E3 in the Part and MIDI SCENES' mix puts E3 in the track record
+  (the same remix without this module: D#3), the registers MIDI SCENES'
+  detour starts from equal but for that value; its scene locks on a MIDI
+  track (scene A and B held, a CTRL1 knob turned) write the same lock table
+  and send the same MIDI with and without this module.
+- Cost (emulator instruction counts, not a hardware share; SCALE OFF,
+  MAJOR C, MINOR A, PENT.MN F#, WHOLE B, HUNG.MIN D#): a MIDI CHROMATIC
+  press 6 instructions with SCALE OFF (stock 2), 49..77 with a scale on; a
+  NOTE knob turn, counted over the clamp, the hook and the store
+  (`0x40055382` .. `0x40055392`), 10 with SCALE OFF (stock 5), 104..278
+  with a scale on for 1..3 clicks; a NOTE lock turn 8 (stock 2), 117..302
+  for 1..3 clicks. Each click walks the notes up to the next scale note,
+  so a scale with fewer notes costs more: on a seven-note scale up to
+  about 230 (knob) and 250 (lock) for 3 clicks, on a five-note scale
+  (PENT.MN) up to about 280 (knob) and 300 (lock). The sequencer tick is
+  not hooked (mean 1,138, max 2,540 on a chord trig, equal to 2.12). The
+  DRAM unit grew by 376 B (3,576 -> 3,952 B). The quantizer's ROM units
+  (core.s, keys.s, scale.s) are unchanged; the new and moved hook sites
+  and the relinked operands change the image.
 
 **An option not taken.** One snapping stage where the sequencer produces a
 note (after TRAN and stock's KEY, before the note-on, 0x4009fb80) would
@@ -358,7 +382,7 @@ stock bytes before anything is written (`manifest.py`).
 | `0x40045918` FUNC + LEFT/RIGHT, CHROMATIC | `7401 b5b9 460d16fc` — `moveq #1,%d2; eor.l %d2,0x460d16fc` | jmp + nop | `qz_octkey` | both; a synth track: `qz_oct` +-1 (clamped -4..+4), the word := 0; `jmp 0x40045920` |
 | `0x40044968` CHROMATIC drawer, picture choice | `7201 b2b9 460d16fc` — `moveq #1,%d1; cmp.l 0x460d16fc,%d1` | jmp + nop | `qz_octdraw` | both (the compare last: the `bne` after reads its flags), after clearing the word on a synth track; `jmp 0x40044970` |
 | `0x400449be` CHROMATIC drawer, the number (2.13, Modwerk #264; `0x400449b8` until 2.12) | `2f00 4879 400b465d` — `move.l %d0,-(%sp); pea 0x400b465d` | jmp + nop | `qz_octnum` | both on every path (stock's MIDI branch jumps here); a MIDI track pushes stock's number, a synth track `qz_oct`, a sample track its position; with a scale on (2.9) its own format `"<ROOT> %d"` in place of stock's `"%d"`; `jmp 0x400449c6` (the same nine arguments) |
-| `0x4005538a`, `0x40050b98`, `0x400436a8` (2.13) | see "MIDI tracks (2.13)" | | `qz_mknob`, `qz_mplock`, `qz_mkey` | |
+| `0x40055382`, `0x40050b98`, `0x400436a8` (2.13) | see "MIDI tracks (2.13)" | | `qz_mknob`, `qz_mplock`, `qz_mkey` | |
 | `0x40010212` boot sanitiser of the battery block | `4a39 100b14ae` — `tst.b 0x100b14ae` | jsr | `qz_boot` (`core.s`, ROM) | the `tst.b` last (the caller's `bge` reads its flags), after clamping SCALE 0..24, GLIDE 0..127, ROOT 0..11 |
 | `0x40025ac2` project defaults | `42b9 100b14d4` — `clr.l 0x100b14d4` | jsr | `qz_defaults` (`core.s`, ROM) | the `clr.l`, after SCALE := OFF, GLIDE := OFF, ROOT := C |
 | `0x40065bca` SEQUENCER draw loop | `4282 4fef 0020` — `clr.l %d2; lea 32(%sp),%sp` | jmp | `qz_draw` | the `lea`; d2 := scroll offset × 4; `jmp 0x40065bd0` |

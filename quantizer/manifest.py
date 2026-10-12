@@ -9,7 +9,9 @@ lower) before it becomes the pitch the voice, the lock and the screen see.
 OFF is stock: every detour replays what it displaced.
 
 MIDI TRACKS (12 Oct 2026, Octatrick 2.13). With a scale on, a MIDI track's
-NOTE knob (qz_mknob at 0x4005538a, the knob handler's MIDI store) and its
+NOTE knob (qz_mknob at 0x40055382, the knob handler's MIDI clamp just before
+its store 0x4005538a, which stays stock: octabam's MIDI SCENES detours that
+store and composes with this hook) and its
 NOTE locks (qz_mplock at 0x40050b98, the MIDI p-lock editor's store; a LIVE
 REC lock reads the knob's value) step to the next note of the ROOT-rotated
 scale in the turn direction (pitch class = note mod 12; qz_quant's MIDI
@@ -260,8 +262,9 @@ MODULE = Module(
         Detour(0x40050e60, H("13848859" "73b9100b14cc"), "qz", "qz_plock",
                "p-lock editor (TRIG held): the lock store -- PTCH steps by scale degree",
                kind="jsr", pad_to=10),
-        Detour(0x4005538a, H("1a82" "223c000018b2"), "qz", "qz_mknob",
-               "knob handler, the MIDI tracks' branch: the store -- a MIDI track's NOTE steps by scale degree from ROOT (2.13)",
+        Detour(0x40055382, H("2400" "b280" "6c02" "2401"), "qz", "qz_mknob",
+               "knob handler, the MIDI tracks' branch: the clamp to the max just before the store 0x4005538a -- a MIDI "
+               "track's NOTE steps by scale degree from ROOT (2.13); the store stays stock, so MIDI SCENES' detour there composes",
                kind="jsr", pad_to=8),
         Detour(0x40050b98, H("11444900" "73b9100b14cc"), "qz", "qz_mplock",
                "MIDI p-lock editor (TRIG held): the lock store -- a NOTE lock steps by scale degree from ROOT (2.13)",

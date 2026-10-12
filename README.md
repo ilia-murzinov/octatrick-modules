@@ -247,8 +247,10 @@ builds on the author's unit and were never tagged.
   quantizer has carried since it found the bug (Modwerk #264; thanks to
   the Modwerk contributors). tools/align_check.py checks builds on current
   octabam again (the modules bound to the remix's settings,
-  `registry.bound`). The synth, SY DRUM, TUNER, DIRECT JUMP and PROCESSOR
-  LOAD are unchanged.
+  `registry.bound`). The NOTE knob's hook sits just before the knob's
+  store, not on it, so octabam's MIDI SCENES (which hooks that store) can
+  be built into one remix with the quantizer. The synth, SY DRUM, TUNER,
+  DIRECT JUMP and PROCESSOR LOAD are unchanged.
 - 2.12 (tag `v2.12`, 11 Oct 2026): two fixes from the author's test of
   2.11 on his MKI (as Modwerk's FM Synth 0.1.4). THE METRONOME NO LONGER
   CUTS A HELD NOTE: a held note no longer cuts out at every metronome click;

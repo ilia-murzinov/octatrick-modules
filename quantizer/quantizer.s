@@ -457,40 +457,52 @@ qz_p_done:
         mvz.b   0x100b14cc,%d1          | displaced
         rts
 
-| ---- (2.13) THE MIDI TRACKS' NOTE: the knob, jsr planted at 0x4005538a -----------
+| ---- (2.13) THE MIDI TRACKS' NOTE: the knob, jsr planted at 0x40055382 -----------
 | The MIDI branch of the knob handler (0x40055304, reached with the MIDI tracks
 | on screen) resolves the Part byte into a5 (Part + 0x8f162 + 32 * track +
 | flat), calls the slot's handler (NOTE: the generic 0x4003240c, a semitone a
-| detent), clamps to the descriptor's [min, min + count - 1] into d2 and stores
-| it at 0x4005538a -- the hook; the SRAM mirror, the live copy 0x46c76dc0 + 68
-| * track, a LIVE REC lock (0x40042158) and the CC echo then read d2. Registers:
-| d6 = the flat slot (signed byte; 0 = NOTE, slot A of the NOTE page), d5 =
-| slot, a4 = the delta (detents, signed), a3 = the page descriptor (slot names
-| at +0x16), (a5) still the old value. With a scale on, NOTE steps by scale
-| degree from the old value exactly as PTCH does on an audio track (qz_quantm:
-| a value between degrees goes to the next one in the turn direction, at 0 or
-| 127 it stays). VEL, LEN, NOT2..4 and every other slot: stock. d0 / d1 / a0 /
-| a1 are free here (the displaced code and what follows load them).
+| detent), clamps it to the descriptor's min into d0, and at 0x40055382 -- the
+| hook, 8 bytes: move.l d0,d2; cmp.l d0,d1; bge.s; move.l d1,d2 -- to the max
+| d1 into d2, which 0x4005538a stores into the Part; the SRAM mirror, the live
+| copy 0x46c76dc0 + 68 * track, a LIVE REC lock (0x40042158) and the CC echo
+| then read d2. The hook sits one instruction group before the store so that
+| the store itself stays stock: octabam's MIDI SCENES detours 0x4005538a (its
+| scn_pwrite), and the two compose -- this unit decides d2, the store
+| (stock's or MIDI SCENES') takes it. Registers here: d6 = the flat slot
+| (signed byte; 0 = NOTE, slot A of the NOTE page), d5 = slot, a4 = the
+| delta (detents, signed), a3 = the page descriptor (slot names at +0x16),
+| (a5) still the old value. With a scale on, NOTE steps by scale degree from
+| the old value exactly as PTCH does on an audio track (qz_quantm: a value
+| between degrees goes to the next one in the turn direction, at 0 or 127 it
+| stays). VEL, LEN, NOT2..4 and every other slot: stock. Only d2 changes:
+| d0 / d1 / a0 / a1 leave as stock leaves them (d1 is kept on the stack
+| while it names the slot), so whatever follows the store sees stock's
+| registers but for d2.
 qz_mknob:
-        lea     qz_scale,%a0
-        tst.b   (%a0)
-        jbeq    qz_mk_store             | OFF: stock
+        move.l  %d0,%d2                 | displaced: d2 := the value,
+        cmp.l   %d0,%d1                 | displaced:   capped at the max (d1)
+        jbge    qz_mk_capped            | displaced
+        move.l  %d1,%d2                 | displaced
+qz_mk_capped:
+        tst.b   NV_SCALE
+        jbeq    qz_mk_done              | OFF: stock
         tst.l   MIDI_MODE
-        jbeq    qz_mk_store
+        jbeq    qz_mk_done
         tst.b   %d6                     | flat 0: NOTE
-        jbne    qz_mk_store
+        jbne    qz_mk_done
         tst.l   %d5                     | slot A
-        jbne    qz_mk_store
+        jbne    qz_mk_done
+        move.l  %d1,-(%sp)
         move.l  0x16(%a3),%d1           | the slot's name: "NOTE"
         cmpi.l  #0x4e4f5445,%d1
-        jbne    qz_mk_store
+        jbne    qz_mk_pop
         move.l  %a4,%d1                 | delta: detents, signed
-        jbeq    qz_mk_store
+        jbeq    qz_mk_pop
         mvz.b   (%a5),%d2               | from the value the knob was turned from
         jbsr    qz_quantm
-qz_mk_store:
-        move.b  %d2,(%a5)               | displaced: the Part byte
-        move.l  #6322,%d1               | displaced
+qz_mk_pop:
+        move.l  (%sp)+,%d1
+qz_mk_done:
         rts
 
 | ---- (2.13) the MIDI NOTE with a [TRIG] key held: jsr planted at 0x40050b98 ------
