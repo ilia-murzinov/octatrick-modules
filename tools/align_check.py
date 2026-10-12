@@ -152,6 +152,7 @@ def main():
         sys.exit(2)
     remix = registry.remix(name)
     mods = registry.modules()
+    mods = registry.bound(remix) if hasattr(registry, "bound") else mods   # the modules bound to the remix's settings
     sel = [mods[k] for k in remix.modules]
     fails, notes = [], []
     code = []                       # (lo, hi, rows, symbols, what): every checked unit's code
