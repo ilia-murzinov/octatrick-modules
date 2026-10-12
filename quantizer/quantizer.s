@@ -1,5 +1,14 @@
 | SCALE QUANTIZER -- the DRAM unit (13 Sep 2026; a DRAM unit since 28 Sep 2026). GNU as.
 |
+| OCTATRICK 2.13 (12 Oct 2026): the MIDI tracks. With a scale on, a MIDI
+|   track's NOTE knob and NOTE locks step by scale degree from ROOT
+|   (qz_mknob, qz_mplock, qz_quant's MIDI mode) and its CHROMATIC keys play
+|   note + ROOT snapped to the scale (qz_mkey, qz_msnap); the keyboard's
+|   number reads "A 3". Editing only: the sequencer, NOT2..4, TRAN, the
+|   arpeggiator's notes and MIDI IN are stock. qz_octnum sits at the
+|   drawer's common push 0x400449be (Modwerk #264; until 2.12 CHROMATIC on a
+|   MIDI track froze the unit).
+|
 | OCTATRICK 2.9 (28 Sep 2026): ROOT, and the move into DRAM.
 |   * ROOT: a fifth SEQUENCER row, right under SCALE (GLIDE is the sixth
 |     now): C C# D D# E F F# G G# A A# B, the root the scale is

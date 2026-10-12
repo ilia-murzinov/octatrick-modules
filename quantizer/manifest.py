@@ -8,6 +8,24 @@ in the turn direction instead of one raw unit (from 0 up in PHRYGIAN: 1, 3,
 lower) before it becomes the pitch the voice, the lock and the screen see.
 OFF is stock: every detour replays what it displaced.
 
+MIDI TRACKS (12 Oct 2026, Octatrick 2.13). With a scale on, a MIDI track's
+NOTE knob (qz_mknob at 0x4005538a, the knob handler's MIDI store) and its
+NOTE locks (qz_mplock at 0x40050b98, the MIDI p-lock editor's store; a LIVE
+REC lock reads the knob's value) step to the next note of the ROOT-rotated
+scale in the turn direction (pitch class = note mod 12; qz_quant's MIDI
+mode), and a MIDI CHROMATIC key (qz_mkey at 0x400436a8, the press path of
+0x40043664) plays note + ROOT snapped to the nearest scale note (qz_msnap,
+ties down): the note-on, the arpeggiator's add, the held note its release
+turns off and the live recorder all take it. The drawer's number reads
+"<ROOT> <octave>" (qz_octnum). NOT2..4, TRAN, the arpeggiator's output, MIDI
+IN, VEL / LEN and the sequencer are stock (editing only: stock's ARP SETUP
+KEY forces a track's every note into a key); SCALE OFF replays every
+displaced instruction. qz_octnum moved from 0x400449b8 to the drawer's
+common push 0x400449be (Modwerk #264): stock's MIDI branch jumps to
+0x400449be, so the 2.9 .. 2.12 detour skipped the octave push there and
+the drawer's call ran one argument short -- CHROMATIC on a MIDI track froze
+the unit.
+
 ROOT (28 Sep 2026, Octatrick 2.9). One per project, a fifth SEQUENCER row
 right under SCALE: C C# D D# E F F# G G# A A# B (C = 2.8's behaviour: the
 pitches, the knob and the locks byte for byte; the keyboard's number reads
@@ -226,7 +244,8 @@ MODULE = Module(
         "the scale is built on (C..B; key 1 of the CHROMATIC keyboard sounds it); > GLIDE: the "
         "synth's glide time (OFF, 1..127; the legato switch is the synth track's LEG setting); "
         "polyphonic chromatic keys on a synth track whose VOIC is 2..4; on a synth track "
-        "PTCH is semitones (-64..+63) and the CHROMATIC octave runs -4..+4.",
+        "PTCH is semitones (-64..+63) and the CHROMATIC octave runs -4..+4; on a MIDI track "
+        "(2.13) the NOTE knob, NOTE locks and the CHROMATIC keys follow the scale and root.",
     linked=(                                   # ROM link order: qzs names core.s's qz_scale_mask
         Linked("qzk", os.path.join(_HERE, "keys.s"), cpu="5475", cave_addr=KEYS_AT),
         Linked("qzc", os.path.join(_HERE, "core.s"), cpu="5475"),

@@ -104,7 +104,11 @@ to watch.
   snap all read one root-rotated mask, and key 1 of the CHROMATIC keyboard
   sounds the root -- and the unit itself is a DRAM unit of the platform
   runtime: only a 192-byte core (the boot clamps, the defaults, the mask)
-  and the two pinned stubs stay in the OS image. `quantizer/README.md`.
+  and the two pinned stubs stay in the OS image. Since 2.13 the MIDI tracks
+  follow SCALE and ROOT too: the NOTE knob and NOTE locks step through the
+  scale, and the MIDI CHROMATIC keyboard plays the scale from the root
+  (chord offsets, TRAN, the arpeggiator and MIDI IN stay stock).
+  `quantizer/README.md`.
 - **`direct-jump/`** (key `DIRECT JUMP`) -- CHAIN AFTER gains a DIRECT option
   (option 2 of the list): a pattern chosen while the sequencer runs starts
   at the next step, at the step count the old pattern had reached. One ROM
@@ -226,6 +230,25 @@ Only tagged versions are releases; the numbered builds between two tags
 (2.3 .. 2.7 on the way to 2.8, the 2.9 builds before the tag) were test
 builds on the author's unit and were never tagged.
 
+- 2.13 (tag `v2.13`, 12 Oct 2026): SCALE QUANTIZER ON MIDI TRACKS. With
+  a scale on, a MIDI track's NOTE knob steps to the next note of the scale
+  built on ROOT (as PTCH does on an audio track), NOTE locks do the same
+  (a held trig in GRID RECORDING, and LIVE RECORDING), and the MIDI
+  CHROMATIC keyboard plays the scale from the root -- key 1 sounds the
+  root, every key the nearest scale note, the number beside the keyboard
+  reads the root's name ("A 3"); the note-off, the arpeggiator's input and
+  the live recorder take the same note. NOT2..4, TRAN, the arpeggiator's
+  own notes and MIDI IN are stock (to force everything a MIDI track sends
+  into a key, use the track's ARP SETUP > KEY); SCALE OFF is stock; no new
+  setting, projects unchanged. A FIX FOR EVERY TAG SINCE 2.9: entering
+  CHROMATIC mode on a MIDI track froze the unit (2.9 .. 2.12: the keyboard
+  drawer's octave hook sat where stock's MIDI branch jumps into it); the
+  hook now sits at the drawer's common push, the form Modwerk's bundled
+  quantizer has carried since it found the bug (Modwerk #264; thanks to
+  the Modwerk contributors). tools/align_check.py checks builds on current
+  octabam again (the modules bound to the remix's settings,
+  `registry.bound`). The synth, SY DRUM, TUNER, DIRECT JUMP and PROCESSOR
+  LOAD are unchanged.
 - 2.12 (tag `v2.12`, 11 Oct 2026): two fixes from the author's test of
   2.11 on his MKI (as Modwerk's FM Synth 0.1.4). THE METRONOME NO LONGER
   CUTS A HELD NOTE: a held note no longer cuts out at every metronome click;
@@ -354,7 +377,9 @@ builds on the author's unit and were never tagged.
   SELECT MACHINE TYPE, the `FM`, 1 Part signature, the Part-validator guard
   and the sample-free START / source path, adapted from Modwerk's FM Synth
   module (derived from its Analog BD chooser hooks, Sam Banks' MIT notice) and
-  ported to this repository's manifests. Their notices are in [LICENSE](LICENSE).
+  ported to this repository's manifests; and the CHROMATIC drawer fix for
+  MIDI tracks (Modwerk #264: the quantizer's octave hook at the drawer's
+  common push), taken into the quantizer at 2.13. Their notices are in [LICENSE](LICENSE).
 
 ## Unofficial
 
