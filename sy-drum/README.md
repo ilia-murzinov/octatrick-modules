@@ -110,15 +110,21 @@ duplication of a page, and the erase of a step in GRID RECORDING or LIVE RECORDI
 - WORK follows working edits, STRD an explicit SAVE PROJECT / SAVE BANK; RELOAD restores the saved state (a bank
   saved without locks loses its WORK file); SAVE TO NEW and EXPORT carry the files, DELETE removes them (stock
   removes only the files it knows, then the folder);
-- WORK is written about a second after a lock edit, while the sequencer plays or not, and at SYNC TO CARD and SAVE.
-  Stock needs no such write for the current bank: it keeps that bank's patterns (and their stock locks) in
-  battery-backed memory across a power-off, and it writes its own working files only while stopped. The step locks
-  have no battery-backed copy, so a lock edited in the last second or so before a power-off can come back without
-  that edit while the stock locks of the same steps are kept. SAVE PROJECT (or a few seconds' wait) before powering
-  off keeps everything;
+- WORK is written within about 1.2 s of a lock edit, while the sequencer plays or not (stopped, by stock's own
+  background save; playing, which stock's background save skips, by a job of the module's at the same cadence: at
+  most one write every 1.2 s, and none while no lock edit is unwritten), and at SYNC TO CARD and SAVE. Stock needs
+  no such write for the current bank: it keeps that bank's patterns (and their stock locks) in battery-backed memory
+  across a power-off. The step locks have no battery-backed copy: a power-off less than about 1.2 s after a lock
+  edit, before the next write, can bring that step back without the edit while the stock locks of the same steps
+  are kept. SAVE PROJECT before powering off, or two seconds without a lock edit, keeps the step locks (measured
+  below; before 2.14 the WORK files were written only while stopped, so locks edited during playback were lost by
+  a power-off while playing or within a second of STOP);
 - a project without these files loads with no step locks, as before (projects saved by 2.10 load unchanged);
-- they load even when one of the project's stock bank files is missing or unreadable (stock then starts that
-  bank empty and loads the project);
+- they load whenever the project loads, also when one of the project's stock bank files is missing, cut short or
+  damaged: stock shows its own message (SOME ERRORS OCCURED ... ABORT LOADING THIS PROJECT?); answered NO, it starts
+  that bank empty and loads the project, and the step-lock files are read as usual. Before 2.14 one such stock bank
+  file left every bank without its step locks, with no message of the module's: at power-on the PLAYBACK locks came
+  back (stock keeps the current bank in battery-backed memory) and the PLAYBACK SETUP locks did not;
 - the stock bank files keep their format. Keep the companion files with the project when copying or backing it up
   on a computer.
 
@@ -270,12 +276,22 @@ declares the conflict, so octabam refuses the pair by name. A table of the four 
 (512 KiB) would fit by arithmetic (not built); it would no longer hold the development builds' E / F and G..J
 controls that a project from them carries through a save here.
 
-**Power-off without SAVE** (octabam's emulator with the battery-backed memory carried over, a power-up as the unit
-does it, 12 Oct 2026): lock edits while stopped come back after a power-off 2 s later; lock edits during playback
-came back only when the unit stopped for about a second before the power-off (a power-off after 10 or 30 s of
-playing, after a pattern change while playing, or 0.3 s after STOP brought the stock locks back and the step locks
-of the last WORK write) -- the reason the module now writes WORK while the sequencer plays; with it every one of
-those cases comes back whole.
+**Power-off without SAVE** (octabam's emulator with the battery-backed memory carried over and a power-up as the unit
+does it; a project with Flex samples loaded, two SY DRUM tracks, each with new PLAYBACK locks on two steps and new
+PLAYBACK SETUP locks on two steps, no SAVE after the edits; 12 Oct 2026). Before 2.14 locks edited while the sequencer
+played came back only when the unit had stopped for about a second before the power-off: a power-off after 10 or 30 s
+of playing, after a pattern change while playing, or 0.3 s after STOP brought the stock locks back and the PLAYBACK
+SETUP locks as they were before the edits. With 2.14 each of these comes back whole -- 10 s and 30 s of playing, a
+pattern change, 0.3 s and 2 s after STOP, edits made while stopped and a power-off 2 s later -- the PLAYBACK SETUP and
+PLAYBACK lock rows read back as they were at the power-off. The residue: a power-off 0.3 s after the last edit lost
+that one edit (the step came back as before it) when stopped, and kept it while playing (a write fell in between);
+WORK is written every 60 UI ticks (1.2 s on the emulator) while an edit is unwritten, and not otherwise (40 edits in
+12 s of playing: ten writes 1.2 s apart, then none while playing on and none at STOP; an edit while stopped: one
+write, by stock's own background save). A stock bank file of the project (`bank05.work`) removed, cut to 4 KB or with
+a damaged header: stock's own message, the same before and with 2.14; answering NO, the project loads, and with 2.14
+the PLAYBACK SETUP locks of every bank load with it (before 2.14: none, and no lock could be set until the next
+project load); answering YES leaves no project and no step locks, as before.
 
-**Not yet measured:** anything on hardware, beyond the first SY DRUM reports (the companion files are on the card;
-the RAM table is filled from them at every project load).
+**Not yet measured:** anything on hardware beyond the first SY DRUM reports -- in particular the card writes of
+WORK during playback beside a STATIC track streaming from the card (the companion files are on the card; the RAM
+table is filled from them at every project load).

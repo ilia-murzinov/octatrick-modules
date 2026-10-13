@@ -85,7 +85,7 @@ to watch.
   (`sylockNN.work` / `.strd`, the author's development builds' format, so a
   project moves between them with its locks). One voice a track, any number
   of tracks; no sample or marker file. It runs on SYNTH MACHINE's engine (one
-  DRAM unit beside it, a 2 MiB lock table in the platform reserve, 52 stock
+  DRAM unit beside it, a 2 MiB lock table in the platform reserve, 53 stock
   hooks of its own). `sy-drum/README.md`.
 - **`quantizer/`** (key `SCALE QUANTIZER`) -- a SCALE row in PROJECT >
   CONTROL > SEQUENCER (24 scales): the PTCH knob, parameter locks and
@@ -230,6 +230,26 @@ Only tagged versions are releases; the numbered builds between two tags
 (2.3 .. 2.7 on the way to 2.8, the 2.9 builds before the tag) were test
 builds on the author's unit and were never tagged.
 
+- 2.14 (tag `v2.14`, 12 Oct 2026): SY DRUM ONLY -- ITS STEP LOCKS SURVIVE
+  A POWER-OFF WITHOUT SAVE. From the author's test of SY DRUM on his MKI:
+  PLAYBACK SETUP locks (LSPD LDEP WAVE S&H) edited while the pattern
+  played came back without those edits after a power-off with no SAVE
+  PROJECT, while the PLAYBACK locks always came back. Stock keeps the
+  current bank in battery-backed memory and writes its own working files
+  only while the sequencer is stopped; the step locks' working files
+  (`sylockNN.work`) were written by that same save, so a power-off while
+  playing, or within about a second of STOP, found them behind. They are
+  now written while the sequencer plays too, at most once every 60 UI
+  ticks (1.2 s) and only while a lock edit is unwritten (one hook more, on
+  the UI tick's transport test: 53). A lock edited less than about 1.2 s
+  before a power-off can still come back without that edit; SAVE PROJECT
+  closes that. And the step-lock files are now read whenever a project
+  loads: before, one stock bank file of the project that was missing, cut
+  short or damaged (stock shows its message, starts that bank empty and
+  loads the project) left every bank without its step locks. The synth,
+  SCALE QUANTIZER, TUNER, DIRECT JUMP and PROCESSOR LOAD are 2.13's;
+  `v2.13` stays the release of the quantizer on MIDI tracks and the one
+  Modwerk's FM Synth 0.1.5 is built on.
 - 2.13 (tag `v2.13`, 12 Oct 2026): SCALE QUANTIZER ON MIDI TRACKS. With
   a scale on, a MIDI track's NOTE knob steps to the next note of the scale
   built on ROOT (as PTCH does on an audio track), NOTE locks do the same
