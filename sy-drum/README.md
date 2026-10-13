@@ -117,6 +117,8 @@ duplication of a page, and the erase of a step in GRID RECORDING or LIVE RECORDI
   that edit while the stock locks of the same steps are kept. SAVE PROJECT (or a few seconds' wait) before powering
   off keeps everything;
 - a project without these files loads with no step locks, as before (projects saved by 2.10 load unchanged);
+- they load even when one of the project's stock bank files is missing or unreadable (stock then starts that
+  bank empty and loads the project);
 - the stock bank files keep their format. Keep the companion files with the project when copying or backing it up
   on a computer.
 

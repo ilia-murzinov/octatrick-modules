@@ -399,9 +399,14 @@ void sl_io_reject_job(const u8 *job,s32 error) {
     fn=((u32)job[off]<<24)|((u32)job[off+1]<<16)|((u32)job[off+2]<<8)|job[off+3];
     if(fn)sl_io_post((void (*)(s32))fn,error);
 }
+/* The stock load returns the first error of any bank in its mask -- a missing bank file
+ * (-12, that bank initialised empty), one it cannot open or read, one it rejects -- and still
+ * activates the project. The lock files are read whatever it returned: at power-on its mask
+ * is every bank but the current one, so one such bank file would otherwise leave every bank's
+ * step locks unloaded while the current bank's stock locks come back from battery-backed RAM. */
 s32 sl_io_banks_load(void *p,u32 mask,void *a,void *b) {
     s32 r=sl_io_stock_banks_load(p,mask,a,b);char base[PATH_BYTES];
-    if(r>=0 && current_base(base)==0 && (!sl_io_loaded||sl_io_job_kind==4||!same_text(base,sl_io_base))) {
+    if(current_base(base)==0 && (!sl_io_loaded||sl_io_job_kind==4||!same_text(base,sl_io_base))) {
         s32 e=load_project();if(e<0)note(e,0);
     }
     return r; /* A broken extension must not prevent stock project activation. */
