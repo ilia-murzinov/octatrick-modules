@@ -82,16 +82,20 @@ tables above. Nothing is stored: SCALE and ROOT are the existing
 battery-RAM bytes, no project or Part format changes, and **SCALE OFF is
 stock** (ROOT is ignored; every new detour replays what it displaced).
 
-**What is not snapped, on purpose.**
+**What is not snapped in this version.**
 
 - **NOT2, NOT3, NOT4** stay semitone offsets from NOTE (the chord a trig
   plays is NOTE + its offsets, as on stock), **TRAN** transposes by
   semitones, and **the arpeggiator's own notes** (RNGE, the octave
   steps) are stock. So a chord or a transposition can leave the scale.
-  To force every note a MIDI track sends into a key, use the track's own
-  **ARP SETUP > KEY** (stock): it acts on everything the track plays. The
-  reason is the drum machine on a MIDI track: its note numbers are
-  sounds, not pitches, and a sequencer-wide snap would remap them.
+  An option for the chords, TRAN and the arpeggiator to follow the scale
+  is planned for a later version, together with a per-track switch that
+  exempts a MIDI track from the scale (a drum machine's note numbers are
+  sounds, not pitches). Until then: with a scale on, every MIDI track's
+  NOTE knob, NOTE locks and chromatic keys snap, so program a drum track
+  with SCALE OFF; stored notes are never changed by the quantizer. Stock's
+  own **ARP SETUP > KEY** forces everything a track sends into a key, per
+  track, independently of SCALE and ROOT.
 - **MIDI IN** (thru to a MIDI track's channel, the auto channel's direct
   play and the notes it feeds the arpeggiator), VEL, LEN, CCs, program
   changes, scene locks and the LFOs on NOTE: stock.
@@ -185,12 +189,12 @@ unit's MIDI port transmits; expected values from a model of the rules):
   (core.s, keys.s, scale.s) are unchanged; the new and moved hook sites
   and the relinked operands change the image.
 
-**An option not taken.** One snapping stage where the sequencer produces a
-note (after TRAN and stock's KEY, before the note-on, 0x4009fb80) would
-force chords, TRAN and the arpeggiator onto the scale too, with the note
-stored for its note-off so nothing can hang. It is left out so that a MIDI
-track keeps its programmed notes (and a drum machine its sounds); stock's
-ARP SETUP KEY already does that job per track. It can be added if wanted.
+**Planned.** One snapping stage where the sequencer produces a note
+(after TRAN and stock's KEY, before the note-on, 0x4009fb80) would force
+chords, TRAN and the arpeggiator onto the scale too, with the note stored
+for its note-off so nothing can hang. It is planned as an option for a later
+version, together with a per-track switch that exempts a MIDI track from
+the scale, so that a drum machine on a MIDI track keeps its sounds.
 
 ## The scales
 

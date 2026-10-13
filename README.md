@@ -258,9 +258,10 @@ builds on the author's unit and were never tagged.
   root, every key the nearest scale note, the number beside the keyboard
   reads the root's name ("A 3"); the note-off, the arpeggiator's input and
   the live recorder take the same note. NOT2..4, TRAN, the arpeggiator's
-  own notes and MIDI IN are stock (to force everything a MIDI track sends
-  into a key, use the track's ARP SETUP > KEY); SCALE OFF is stock; no new
-  setting, projects unchanged. A FIX FOR EVERY TAG SINCE 2.9: entering
+  own notes and MIDI IN are stock in this version (an option for them to
+  follow the scale, and a per-track switch that exempts a MIDI track from
+  it, are planned; program a drum track with SCALE OFF until then); SCALE
+  OFF is stock; no new setting, projects unchanged. A FIX FOR EVERY TAG SINCE 2.9: entering
   CHROMATIC mode on a MIDI track froze the unit (2.9 .. 2.12: the keyboard
   drawer's octave hook sat where stock's MIDI branch jumps into it); the
   hook now sits at the drawer's common push, the form Modwerk's bundled
