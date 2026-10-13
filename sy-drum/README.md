@@ -107,9 +107,15 @@ duplication of a page, and the erase of a step in GRID RECORDING or LIVE RECORDI
 
 - a bank's files are written only when the bank holds a lock, or when its file already exists (so removing the last
   lock is saved too): a project without SY DRUM locks gets no file;
-- WORK follows working edits (the stock background save, SYNC TO CARD), STRD an explicit SAVE PROJECT / SAVE BANK;
-  RELOAD restores the saved state (a bank saved without locks loses its WORK file); SAVE TO NEW and EXPORT carry the
-  files, DELETE removes them (stock removes only the files it knows, then the folder);
+- WORK follows working edits, STRD an explicit SAVE PROJECT / SAVE BANK; RELOAD restores the saved state (a bank
+  saved without locks loses its WORK file); SAVE TO NEW and EXPORT carry the files, DELETE removes them (stock
+  removes only the files it knows, then the folder);
+- WORK is written about a second after a lock edit, while the sequencer plays or not, and at SYNC TO CARD and SAVE.
+  Stock needs no such write for the current bank: it keeps that bank's patterns (and their stock locks) in
+  battery-backed memory across a power-off, and it writes its own working files only while stopped. The step locks
+  have no battery-backed copy, so a lock edited in the last second or so before a power-off can come back without
+  that edit while the stock locks of the same steps are kept. SAVE PROJECT (or a few seconds' wait) before powering
+  off keeps everything;
 - a project without these files loads with no step locks, as before (projects saved by 2.10 load unchanged);
 - the stock bank files keep their format. Keep the companion files with the project when copying or backing it up
   on a computer.
@@ -185,9 +191,10 @@ machine from a FLEX slot. They can follow as an addition (nothing stored here wo
   - copy / paste / clear / shift / duplicate / undo (`locks_clip`, `locks_sparse`, `locks_transform`,
     `locks_delete`): the companion rows follow every stock sequence operation;
   - the card (`locks_io.inc.s`, generated from `tools/locks_io.c` by `tools/gen_locks_io.py`): the stock engine
-    task's load / save / reload / sync / SAVE TO NEW / EXPORT / DELETE jobs carry the companion files; playback reads
-    RAM only.
-  52 stock hooks of its own (the manifest: the resolver, the setup editor `sd_setup_edit`, and `LOCK_HOOKS`' 50); the
+    task's load / save / reload / sync / SAVE TO NEW / EXPORT / DELETE jobs carry the companion files; the UI tick
+    asks for the background save of dirty lock files (stock's own while stopped; a job of the module's while the
+    sequencer plays, which stock's background save skips); playback reads RAM only.
+  53 stock hooks of its own (the manifest: the resolver, the setup editor `sd_setup_edit`, and `LOCK_HOOKS`' 51); the
   machine is the Part's signature (`sd_kind`), where the development line asks its marker files. SY DRUM declares
   the conflicts with octabam's KITS (the card jobs and the pattern clipboard) and PLOCKS P2 (the lock queue and the
   held encoder): the same stock sites; and with STEM REC: the platform reserve does not hold both modules' DRAM

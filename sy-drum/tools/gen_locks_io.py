@@ -69,6 +69,10 @@ sl_io_fs_remove:
         jmp (%a0)
 sl_io_stock_directory:
         jmp 0x40025230:l
+sl_io_stock_card_ready:
+        jmp 0x400255ec:l
+sl_io_queue_post:
+        jmp 0x40000c3c:l
 sl_io_post:
         jmp 0x40084110:l
 sl_io_toast:
@@ -136,6 +140,23 @@ sl_io_background_yes:
         jmp 0x40022c1c:l
 sl_io_background_no:
         jmp 0x40022c70:l
+| The UI tick's transport test (0x4005224a; d0 = the sequencer state 0x800065b8): stopped
+| (0) or 2 continue to stock's background save counter; otherwise stock clears that counter
+| (0x40052278) and the lock files get their own flush (sl_io_play_tick).
+sl_io_tick_hook:
+        tst.l %d0
+        beq sl_io_tick_stock
+        moveq #2,%d1
+        cmp.l %d0,%d1
+        beq sl_io_tick_stock
+        lea -16(%sp),%sp
+        movem.l %d0-%d1/%a0-%a1,(%sp)
+        bsr sl_io_play_tick
+        movem.l (%sp),%d0-%d1/%a0-%a1
+        lea 16(%sp),%sp
+        jmp 0x40052278:l
+sl_io_tick_stock:
+        jmp 0x40052254:l
 '''
 def generate():
     with tempfile.TemporaryDirectory(prefix='sy-locks-') as tmp:

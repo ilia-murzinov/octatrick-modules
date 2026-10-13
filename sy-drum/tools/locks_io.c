@@ -18,8 +18,15 @@
  *     scenes and never reads them for playback; RELOAD restores them as that line does (a
  *     saved STRD becomes WORK again, a WORK without STRD is removed), EXPORT copies them,
  *     DELETE removes them (scenes_io.h).
- * WORK follows working edits (the stock background save, the card SYNC), STRD an explicit
- * SAVE PROJECT / SAVE BANK; RELOAD restores STRD.
+ * WORK follows working edits, STRD an explicit SAVE PROJECT / SAVE BANK; RELOAD restores
+ * STRD. WORK is written by the stock background save (the UI tick asks for it about once a
+ * second while a bank is dirty, sl_io_background_request) and the card SYNC. Stock asks for
+ * that save only while the sequencer is stopped: the current bank's own edits need no card
+ * write, since stock keeps that bank in battery-backed memory (CS1) across a power-off. The
+ * lock table has no such copy, so while the sequencer plays the same tick posts a job of its
+ * own (sl_io_play_tick, at the stock save's cadence and with its checks) that writes only
+ * the dirty WORK files; without it a power-off during playback, or within a second of STOP,
+ * kept the stock locks and lost the step locks edited since the last write.
  *
  * Differences from the development line's I/O (the same files, the same reading):
  *   - a sylock file is written only for a bank that holds a lock, or whose sylock file
@@ -74,6 +81,8 @@ extern s32 sl_io_stock_export(void *,const char *,const char *,void *,void *);
 extern s32 sl_io_stock_delete(const char *,const char *);
 extern void sl_io_stock_clear(void);
 extern u32 sl_io_irq_lock(void);
+extern s32 sl_io_stock_card_ready(void);
+extern void sl_io_queue_post(void *,void *);
 extern void sl_io_irq_restore(u32);
 
 static char sl_io_base[PATH_BYTES],sl_io_path[PATH_BYTES];
@@ -85,6 +94,13 @@ volatile u32 sl_io_protected_mask;
 static u32 sl_io_loaded,sl_io_job_kind,sl_io_job_mask;
 static s32 sl_io_warning;
 static u32 sl_present_mask;              /* a sylock file of this bank exists in sl_io_base */
+/* The flush posted while the sequencer plays: a job kind the stock dispatcher does not
+ * know (it drops kinds above 45 after sl_io_before_job has run), one descriptor, at most
+ * one in the queue. */
+enum { FLUSH_KIND=0x80, PLAY_TICKS=60 };
+static u8 sl_io_flush_job[16] __attribute__((aligned(4)));
+static volatile u32 sl_io_flush_pending;
+static u32 sl_io_play_ticks;
 
 static s32 text_copy(char *d,const char *s,u32 cap) {
     u32 i=0;
@@ -332,9 +348,35 @@ static s32 restore_mask(u32 mask) {
     }
     return 0;
 }
+/* The banks the background save has to write: what sl_io_background_request tests. */
+static u32 background_dirty(void) {
+    u32 m=sl_dirty_mask&sl_ready_mask&~(sl_blocked_mask|sl_io_protected_mask);
+    if(m)return m;
+    return sg_dirty_mask&sl_ready_mask&~(sl_blocked_mask|sg_blocked_mask|sg_protected_mask);
+}
+/* The UI tick while the sequencer plays (stock skips its background save then): after
+ * PLAY_TICKS ticks with a dirty bank, post the flush job, under the checks stock makes
+ * before it posts its own (the tick's 0x460d1de8, then 0x80000088, 0x100f847c and the
+ * card / project check 0x400255ec). No card I/O here. */
+void sl_io_play_tick(void) {
+    if(!sl_io_loaded||!background_dirty()){sl_io_play_ticks=0;return;}
+    if(++sl_io_play_ticks<PLAY_TICKS)return;
+    sl_io_play_ticks=0;
+    if(sl_io_flush_pending)return;
+    if(*(volatile u32 *)0x460d1de8||*(volatile s32 *)0x80000088==1||*(volatile u32 *)0x100f847c)return;
+    if(!sl_io_stock_card_ready())return;
+    sl_io_flush_pending=1;sl_io_flush_job[0]=FLUSH_KIND;
+    sl_io_queue_post((void *)0x460d17ce,sl_io_flush_job);
+}
 /* Called from dispatcher before its switch. The job remains stock-owned. */
 s32 sl_io_before_job(const u8 *job) {
     s32 r=0;u32 kind=job[0];
+    if(kind==FLUSH_KIND) {
+        /* Ours: the stock switch drops it after this. */
+        sl_io_flush_pending=0;r=flush(65535,0);
+        if(r<0)note(r,0);
+        return 0;
+    }
     sl_io_job_kind=kind;sl_io_job_mask=((u32)job[2]<<8)|job[3];
     if(kind!=2)sl_io_warning=0;
     if(kind==2||kind==4||kind==7||kind==8||kind==9||kind==10||kind==11||kind==12||kind==17||kind==18)

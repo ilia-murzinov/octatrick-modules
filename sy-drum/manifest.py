@@ -11,9 +11,9 @@ are that module's; SYNTH MACHINE assembles its calls into this unit when SY DRUM
 the remix (synth/manifest.py remix_include: HAVE_SYDRUM).
 
 One DRAM unit (sydrum.s, with engine.inc.s, the step locks' sources and
-synth/engine_abi.inc through its remix.inc), a 2 MiB DramRegion (the lock table) and 52
+synth/engine_abi.inc through its remix.inc), a 2 MiB DramRegion (the lock table) and 53
 detours of its own: the page resolver's epilogue (0x40031ed6), where a SY DRUM track gets
-its PLAYBACK page, the setup editor (0x4003a524), and the step locks' 50 (sequencer, UI,
+its PLAYBACK page, the setup editor (0x4003a524), and the step locks' 51 (sequencer, UI,
 clipboard, card I/O; LOCK_HOOKS). Not with STEM REC: the lock table and STEM REC's buffers
 together exceed the platform reserve (conflicts). Verified in ot_emu (README.md).
 """
@@ -68,6 +68,8 @@ LOCK_HOOKS = (
      "After native lock restoration and application, before existing po_retrig."),
     (0x40022c16, "c08167567001", "sl_io_background_request",
      "locks-only background dirty predicate"),
+    (0x4005224a, "4a8067067202b280", "sl_io_tick_hook",
+     "UI tick's transport test: while the sequencer plays, the lock files' own background flush"),
     (0x40026768, "2f02222f000c", "sl_clip_raw_capture_hook",
      "SY DRUM step lock clip raw capture hook"),
     (0x4002689c, "4fefffe448d71c3c", "sl_clip_page_copy_hook",
