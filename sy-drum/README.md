@@ -265,7 +265,7 @@ track and a trig on every step (1,616 without the test, 973 before the locks), 1
 without the test); 223 - 268 more at each START (`sl_seq_publish`). The voice itself is unchanged (`sy1_mono_render`
 about 938 a call). With no SY DRUM track the free-running LFOs still advance every frame at the LSPD in force: a
 track switched to SY DRUM after such a stretch, even one in which LSPD changed, renders sample for sample as without
-the test. DRAM: the unit 135,715 bytes (code 67,975, data 67,740: the 49 KB file buffer and the 16 KB clipboards),
+the test. DRAM: the unit 136,061 bytes (code 68,297, data 67,764: the 49 KB file buffer and the 16 KB clipboards),
 the lock table 2 MiB in the platform reserve's top (no sample memory is taken: the reserve is octabam's fixed one).
 
 **Not with STEM REC.** The lock table and STEM REC's ring, stack and stream buffers (9,099,264 bytes) are both
