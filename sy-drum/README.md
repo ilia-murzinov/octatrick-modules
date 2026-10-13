@@ -268,5 +268,12 @@ declares the conflict, so octabam refuses the pair by name. A table of the four 
 (512 KiB) would fit by arithmetic (not built); it would no longer hold the development builds' E / F and G..J
 controls that a project from them carries through a save here.
 
-**Not yet measured:** anything on hardware -- in particular a reboot that keeps only battery RAM (the companion
-files are on the card; the RAM table is filled from them at every project load).
+**Power-off without SAVE** (octabam's emulator with the battery-backed memory carried over, a power-up as the unit
+does it, 12 Oct 2026): lock edits while stopped come back after a power-off 2 s later; lock edits during playback
+came back only when the unit stopped for about a second before the power-off (a power-off after 10 or 30 s of
+playing, after a pattern change while playing, or 0.3 s after STOP brought the stock locks back and the step locks
+of the last WORK write) -- the reason the module now writes WORK while the sequencer plays; with it every one of
+those cases comes back whole.
+
+**Not yet measured:** anything on hardware, beyond the first SY DRUM reports (the companion files are on the card;
+the RAM table is filled from them at every project load).
