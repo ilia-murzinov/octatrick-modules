@@ -218,7 +218,8 @@ unit, FINE 0c, the engine-owned AMP envelope and the limiter's removal ran
 there, the held-chord crackle and the live-key pops gone, by ear; the tuner
 (UP + TEMPO) works there too (29 Sep 2026). The last two 2.9 fixes (a sequencer trig on a sounding note, the index ramp) are
 emulator-verified and not yet flashed; so is FM SYNTH in the machine list
-(2.10, 8 Oct 2026). Every feature was verified in an
+(2.10, 8 Oct 2026). 2.15 (the selection guard, the MIDI tracks' scale)
+is emulator-verified and not yet on a unit. Every feature was verified in an
 emulator before flashing (the companion repository
 [timhastie/octa-panel](https://github.com/timhastie/octa-panel) has a
 real-time build of octabam's emulator and a virtual front panel). Read
@@ -239,6 +240,47 @@ Only tagged versions are releases; the numbered builds between two tags
 (2.3 .. 2.7 on the way to 2.8, the 2.9 builds before the tag) were test
 builds on the author's unit and were never tagged.
 
+- 2.15 (tag `v2.15`, 16 Oct 2026): A SELECTION GUARD FOR FM SYNTH AND
+  SY DRUM, AND MIDI TRACKS THAT PLAY IN THE SCALE. FM SYNTH and SY DRUM
+  render their sound on the main processor; with too many of them it runs
+  out of time and the unit freezes. Both machine lists now refuse a choice
+  that would take the active Part past 2 SY DRUM tracks, 1 FM SYNTH track,
+  or FM SYNTH with more than 1 SY DRUM track, and say why in the
+  firmware's message box (`SY DRUM: 2 MAX`, `FM SYNTH: 1 MAX`,
+  `FM+SY DRUM: LIMIT`); the track keeps its machine and nothing is
+  written. The limits are final: they come from PROCESSOR LOAD readings
+  on the author's MKI running 2.14 (everything the guard allows stays at
+  or below a worst block of about 85 % in an empty project, leaving about
+  15 points for a real one). Copy / paste that carries a machine is
+  guarded the same way -- COPY TRACK / PASTE TRACK, the SRC page's paste,
+  the Part paste and their undo: a paste past the limits is refused whole,
+  nothing written, the clipboard kept. The 2.10 marker file
+  (`FMSYNTH*.wav` / `SYNTH*.wav` on a FLEX track) selects nothing any more
+  -- it plays as a sample, and FM SYNTH is chosen in the machine list --
+  so every FM voice is one the guard counted. A project or Part saved
+  with more (2.14 and before had no limit) loads and plays as saved;
+  choosing a stock machine is always allowed. Every Part writes what 2.14
+  writes and survives a power-off without SAVE as in 2.14. SY DRUM's
+  recovered-locks message now fits the message box (`SY LOCKS
+  RECOVERED`; the 31-character line before was never drawn). On the
+  MIDI tracks, what a track plays now follows SCALE and ROOT: the chord
+  notes NOT2..4, TRAN, and the arpeggiator's notes and RNGE octaves are
+  snapped to the nearest scale note where the sequencer sends them (the
+  offsets stay semitones; two chord notes that land on one note sound
+  once; the note-off is for the note sent, so nothing hangs), and so is
+  the chord GRID RECORDING previews with a [TRIG] key + YES. Rows MIDI 1
+  SCALE .. MIDI 8 SCALE (ON / OFF, PROJECT > CONTROL > SEQUENCER, saved
+  with the project) take a MIDI track out of the scale, for a drum
+  machine; with SCALE OFF, or a track's row OFF, the track is stock. MIDI
+  IN thru and the auto channel's direct play stay stock. Hooks at 2.15:
+  SYNTH MACHINE 58 detours (52 at 2.14: six more on the paste stores,
+  their undo and the FLEX preview), SY DRUM 53 (unchanged), SCALE
+  QUANTIZER 24 detours (22: the note stage and the preview), three grown
+  row tables (3 + 11 entries) and one poke, TUNER 3, PROCESSOR LOAD 4 and
+  one poke, DIRECT JUMP its cave; the stock instructions every detour and
+  poke displaces were checked against OS 1.40C (144 sites, 136 at 2.14).
+  TUNER, DIRECT JUMP and PROCESSOR LOAD are 2.14's. Emulator-verified,
+  not yet on a unit.
 - 2.14 (tag `v2.14`, 12 Oct 2026): SY DRUM ONLY -- ITS STEP LOCKS SURVIVE
   A POWER-OFF WITHOUT SAVE. From the author's test of SY DRUM on his MKI:
   PLAYBACK SETUP locks (LSPD LDEP WAVE S&H) edited while the pattern
@@ -269,7 +311,7 @@ builds on the author's unit and were never tagged.
   the live recorder take the same note. NOT2..4, TRAN, the arpeggiator's
   own notes and MIDI IN are stock in this version (an option for them to
   follow the scale, and a per-track switch that exempts a MIDI track from
-  it, are planned; program a drum track with SCALE OFF until then); SCALE
+  it, came in 2.15; program a drum track with SCALE OFF on 2.13 / 2.14); SCALE
   OFF is stock; no new setting, projects unchanged. A FIX FOR EVERY TAG SINCE 2.9: entering
   CHROMATIC mode on a MIDI track froze the unit (2.9 .. 2.12: the keyboard
   drawer's octave hook sat where stock's MIDI branch jumps into it); the

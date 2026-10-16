@@ -647,8 +647,8 @@ clipboard `0x460c8122`, and its undo's `0x4002b962`, from the undo buffer `0x460
 and mark against the Part of the pattern it lands in; before SY DRUM's own hook on the same store, so a
 refused paste moves no lock row either), the Part's store `0x40029a4c` (at `0x40029b8a` / `0x40029b54`:
 the Part pasted, counted whole, `ml_part_over`), and the FLEX list's sample preview `0x40096c54` (at
-`0x40096d22`: a track made FLEX for the preview first drops a mark it kept -- defensive; the preview was
-not reached in the emulator). A refused store takes the function's own "nothing" answer (d0 = 0), so the
+`0x40096d22`: a track made FLEX for the preview first drops a mark it kept; the preview is FUNC + YES in a
+FLEX slot list, measured below). A refused store takes the function's own "nothing" answer (d0 = 0), so the
 paste reports nothing pasted and the clipboard (or the undo) stays. The slot assigner (`ml_became`,
 poly.s `po_assign`) also drops a mark when a track leaves FLEX and before FLEX is given to a track that was
 not FLEX. The marker
@@ -659,8 +659,9 @@ the quantizer's `qz_is_synth` read the list's mark only. `manifest.py` reads `ma
 
 ### Measured (16 Oct 2026, octabam's emulator `ot_emu`, the 2.15 test build of this change; emulator results, not the unit)
 
-All on the same image bytes as the release candidate, against Octatrick 2.14 on the same walks where 2.14 is the
-reference.
+All on the guard's own test build, against Octatrick 2.14 on the same walks where 2.14 is the reference; the walks
+for the lists, every Part, copy / paste, the marker file, the 2.14 project, SY DRUM's file messages and "nothing
+else changed" were run again on the 2.15 release image (with the MIDI-track scale additions): the same results.
 
 - **Every refusal and every allowed case, in both lists, on Part 1 and on Part 3** (a card with T1 and T5 SY DRUM in
   all four Parts, the other tracks STATIC; 26 choices in a row, each followed by the active Part's machine bytes and

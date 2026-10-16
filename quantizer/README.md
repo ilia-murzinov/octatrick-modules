@@ -32,7 +32,7 @@ key does nothing, releasing the last one releases the note. Saved as
 `#SYNTH_GLIDE=n` after the SCALE line. Section "GLIDE and legato" below.
 
 Since 2.9 the quantizer is a DRAM unit of octabam's platform runtime
-(`quantizer.s`, 3,428 B at 2.9, 3,952 B at 2.13, 4,492 B at 2.15) plus three small ROM units: `core.s` (192 B, 196 B since 2.15,
+(`quantizer.s`, 3,428 B at 2.9, 3,952 B at 2.13, 4,384 B at 2.15) plus three small ROM units: `core.s` (192 B, 196 B since 2.15,
 floating: the boot clamps, the defaults, the ROOT-rotated scale mask and
 the 24 masks), `keys.s` (45 B, pinned) and `scale.s` (6 B, pinned); 24
 detours since 2.15 (22 at 2.13, 19 before), three grown pointer tables (3 + 11 entries since 2.15, 3 + 3 before), one poke — all in the
@@ -350,7 +350,11 @@ hardware figures, and nothing here ran on a unit):
   per sequencer tick: mean 1,154 instructions both ways; its worst tick,
   a four-note chord trig, 3,161 on 2.14 and up to 3,417 with a scale on
   (+256). The DRAM unit grew by 540 B (3,952 -> 4,492 B), the ROM core by
-  4 B (192 -> 196), the three row tables by eight entries each.
+  4 B (192 -> 196), the three row tables by eight entries each. In the 2.15
+  release the unit is 4,384 B: the synth's selection guard removed the
+  marker-file test from `qz_is_synth` (the FMSYNTH* / SYNTH* file selects
+  nothing since 2.15). These measurements were run again on the release
+  image, with the same results.
 
 ## The scales
 
