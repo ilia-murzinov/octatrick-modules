@@ -1,6 +1,9 @@
 # Scale quantizer
 
-(12 Oct 2026, Octatrick 2.13: SCALE and ROOT act on the MIDI tracks too -- the NOTE knob, NOTE locks and the
+(15 Oct 2026, Octatrick 2.15: what a MIDI track plays follows the scale -- chords, TRAN, the
+arpeggiator -- and each MIDI track has a switch that takes it out of the scale -- "MIDI tracks:
+what they play, and MIDI n SCALE (2.15)" below.
+12 Oct 2026, Octatrick 2.13: SCALE and ROOT act on the MIDI tracks too -- the NOTE knob, NOTE locks and the
 MIDI CHROMATIC keyboard -- and CHROMATIC on a MIDI track no longer freezes the unit -- "MIDI tracks (2.13)" below.
 28 Sep 2026, Octatrick 2.9: a ROOT row under SCALE, and the unit moved into DRAM -- "ROOT, and the move into DRAM" below.
 24 Sep 2026: polyphonic CHROMATIC keys on a paraphonic synth track -- "Paraphonic keys" below.
@@ -29,10 +32,10 @@ key does nothing, releasing the last one releases the note. Saved as
 `#SYNTH_GLIDE=n` after the SCALE line. Section "GLIDE and legato" below.
 
 Since 2.9 the quantizer is a DRAM unit of octabam's platform runtime
-(`quantizer.s`, 3,428 B at 2.9, 3,952 B at 2.13) plus three small ROM units: `core.s` (192 B,
+(`quantizer.s`, 3,428 B at 2.9, 3,952 B at 2.13, 4,492 B at 2.15) plus three small ROM units: `core.s` (192 B, 196 B since 2.15,
 floating: the boot clamps, the defaults, the ROOT-rotated scale mask and
-the 24 masks), `keys.s` (45 B, pinned) and `scale.s` (6 B, pinned); 22
-detours since 2.13 (19 before), three grown pointer tables (3 + 3 entries), one poke — all in the
+the 24 masks), `keys.s` (45 B, pinned) and `scale.s` (6 B, pinned); 24
+detours since 2.15 (22 at 2.13, 19 before), three grown pointer tables (3 + 11 entries since 2.15, 3 + 3 before), one poke — all in the
 main-OS section plus the loader's append; the bootstrap and every flash-
 programming path are untouched. (Until 2.8: one ROM unit of 3,268 B, which
 left the zero run no room for other modules' caves -- see "ROOT, and the
@@ -82,20 +85,18 @@ tables above. Nothing is stored: SCALE and ROOT are the existing
 battery-RAM bytes, no project or Part format changes, and **SCALE OFF is
 stock** (ROOT is ignored; every new detour replays what it displaced).
 
-**What is not snapped in this version.**
+**What is not snapped in 2.13.** (2.15 snaps what the sequencer plays:
+the next section.)
 
 - **NOT2, NOT3, NOT4** stay semitone offsets from NOTE (the chord a trig
   plays is NOTE + its offsets, as on stock), **TRAN** transposes by
   semitones, and **the arpeggiator's own notes** (RNGE, the octave
-  steps) are stock. So a chord or a transposition can leave the scale.
-  An option for the chords, TRAN and the arpeggiator to follow the scale
-  is planned for a later version, together with a per-track switch that
-  exempts a MIDI track from the scale (a drum machine's note numbers are
-  sounds, not pitches). Until then: with a scale on, every MIDI track's
-  NOTE knob, NOTE locks and chromatic keys snap, so program a drum track
-  with SCALE OFF; stored notes are never changed by the quantizer. Stock's
-  own **ARP SETUP > KEY** forces everything a track sends into a key, per
-  track, independently of SCALE and ROOT.
+  steps) are stock. So in 2.13 a chord or a transposition can leave the
+  scale; with a scale on, every MIDI track's NOTE knob, NOTE locks and
+  chromatic keys snap, so a drum track is programmed with SCALE OFF.
+  Stored notes are never changed by the quantizer. Stock's own **ARP
+  SETUP > KEY** forces everything a track sends into a key, per track,
+  independently of SCALE and ROOT.
 - **MIDI IN** (thru to a MIDI track's channel, the auto channel's direct
   play and the notes it feeds the arpeggiator), VEL, LEN, CCs, program
   changes, scene locks and the LFOs on NOTE: stock.
@@ -189,12 +190,167 @@ unit's MIDI port transmits; expected values from a model of the rules):
   (core.s, keys.s, scale.s) are unchanged; the new and moved hook sites
   and the relinked operands change the image.
 
-**Planned.** One snapping stage where the sequencer produces a note
-(after TRAN and stock's KEY, before the note-on, 0x4009fb80) would force
-chords, TRAN and the arpeggiator onto the scale too, with the note stored
-for its note-off so nothing can hang. It is planned as an option for a later
-version, together with a per-track switch that exempts a MIDI track from
-the scale, so that a drum machine on a MIDI track keeps its sounds.
+## MIDI tracks: what they play, and MIDI n SCALE (2.15)
+
+With a scale on, **what a MIDI track plays follows the scale too**, not
+only what you dial: the chord notes, TRAN and the arpeggiator. And
+**each MIDI track has a switch, MIDI 1 SCALE .. MIDI 8 SCALE**, that takes
+it out of the scale -- for a drum machine on a MIDI track, whose note
+numbers are sounds, not pitches.
+
+**What is snapped, and where.** One stage: the place in the sequencer
+where a MIDI track's notes are made -- a trig's NOTE and NOTE + NOT2, NOT3,
+NOT4, or the arpeggiator's note of the moment -- after TRAN, the MIDI
+transpose and stock's ARP SETUP KEY, just before the note goes out. There
+each note is replaced by the nearest note of the scale built on ROOT, the
+lower one on a tie (the keyboards' rule). So these follow the scale:
+
+- NOTE, and NOTE locks (a NOTE set before the scale was on now plays
+  snapped; the stored value is not changed);
+- the chord notes NOT2..NOT4;
+- TRAN: the transposed chord is pulled back onto the scale;
+- the arpeggiator's notes and its RNGE octaves, whatever feeds it -- the
+  trig's chord, the CHROMATIC keys, MIDI IN on the auto channel;
+- the chord a held [TRIG] key previews with [YES] in GRID RECORDING (stock
+  previews NOTE + NOT2..4 without TRAN; so does this, snapped).
+
+**The semantics, plainly.**
+
+- **The offsets stay semitones.** NOT2 +4 means four semitones above NOTE,
+  as on stock, and the note that results is moved to the nearest scale
+  note. In C MAJOR from C3: +3 (D#3) plays D3, +4 plays E3; +1 plays C3
+  (C#3 is as far from C3 as from D3, and a tie goes down).
+- **A chord can lose a note.** Two notes of one trig that land on the same
+  scale note sound once: one note-on and one note-off. (Stock already
+  drops a repeated note in a chord, the second being a note the track
+  already holds; the snap uses that same test.) C#3 with +1 +3 +1 in
+  PENT.MN F#: C#3, D3 and E3 become C#3, C#3, E3 -- two notes are sent.
+- **An arpeggio can repeat a note.** Arpeggiator steps whose notes snap to
+  the same scale note play it again, each step its own note-on and
+  note-off.
+- **TRAN moves by semitones, then the snap.** A chord's shape can change
+  when it is transposed (C, E, G + 3 semitones in C MAJOR: D#, G, A# ->
+  D, G, A).
+- **ARP SETUP KEY runs first, as stock** (it moves a note down a semitone
+  into its key); then the snap. With both set, what is sent is in SCALE.
+- **Not snapped:** MIDI IN thru to a MIDI track's channel and the auto
+  channel played directly (the arpeggiator off) -- the notes you play are
+  sent as played; VEL, LEN, CCs, program changes and pitch bend; the
+  stored NOTE, locks and offsets (the snap is on the way out only). LFOs
+  that modulate NOTE were not measured.
+
+**Safety.** The stage stores the note it sends for that note's note-off
+(stock does, at the note-on), so changing SCALE, ROOT or a track's switch
+while notes sound cannot leave one hanging: the note-off is always for the
+note that was sent (measured below, chords and the arpeggiator, settings
+changed while they play).
+
+**MIDI 1 SCALE .. MIDI 8 SCALE.** PROJECT > CONTROL > SEQUENCER, rows 7 to
+14 under GLIDE: **ON** (the default) or **OFF**, one row per MIDI track.
+The LEVEL knob and LEFT / RIGHT step it (OFF to the left, ON to the
+right), [YES] toggles it, as on the other rows. A MIDI track set to OFF is
+a track with SCALE OFF in every path: its NOTE knob and NOTE locks step by
+semitones, its CHROMATIC keys play stock's notes and the number beside the
+keyboard reads stock's ("3", not "A 3"), and what it plays is stock. The
+other tracks follow SCALE and ROOT. With SCALE OFF the rows do nothing,
+like ROOT. A row per track, not one row for all eight: the value column
+holds seven characters (`PHRYGIAN` lost its N), so eight track digits do
+not fit, and one row for eight switches would need a track chosen first;
+a row each is read and edited exactly like SCALE, ROOT and GLIDE.
+
+**Where it lives.** One battery-RAM byte, **`0x100b14ef`** (bit t = MIDI
+track t+1 is OFF; 0 = every track follows): the last byte of the padding
+SCALE, GLIDE and ROOT live in (no stock reference to it, outside both
+blocks the boot copies; "Where the setting lives" below), so it survives a
+power cycle as they do. Saved in `project.work` as
+**`#SEQUENCER_MIDI_SCALE_OFF=n`** after the GLIDE line, a comment line
+stock and older Octatrick builds skip; a project saved without it loads
+with every track ON; the project defaults (a cold boot, a new project, the
+loader before it stores) set it to 0 with SCALE, GLIDE and ROOT -- one
+more instruction in the ROM core `core.s` (192 -> 196 bytes).
+
+**Hooks (2.15; stock 1.40C addresses).**
+
+| site | stock bytes (displaced) | kind | stub | what |
+|---|---|---|---|---|
+| `0x4009fb80` the MIDI note stage `0x4009f794`, after TRAN / the MIDI transpose / ARP SETUP KEY, before the active-note test | `1212 6d00 01a6` -- `move.b (%a2),%d1; blt.w 0x4009fd2a` | jmp | `qz_mnote` | a following track's note (a2, the stage's own copy; d7 = the track) snapped in place (`qz_msnap`); the two replayed; `jmp 0x4009fb86` (or `0x4009fd2a`: a negative note is skipped, as stock) |
+| `0x400439d6` the GRID RECORDING preview `0x400438fc` ([TRIG] + [YES]), after its four notes are made | `4aaf 0028 6700 0140` -- `tst.l 40(%sp); beq.w 0x40043b1c` | jmp + nop | `qz_mprev` | the four notes at 28..31(sp) snapped (press and release alike); both replayed; `jmp 0x400439de` / `0x40043b1c` |
+
+No branch in the stock code lands inside either site (a scan of every
+branch and jump target of the stock OS), and no module of octabam hooks
+within 16 bytes of them (MIDI SCENES' nearest detour, `0x4009faaa` in the
+same routine, is 214 bytes before). The 2.13 hooks `qz_mknob`, `qz_mplock`,
+`qz_mkey` and `qz_octnum`'s MIDI branch each gained the switch test (the
+UI track, or the key's track); the SEQUENCER tables grew from 3 + 3 to
+3 + 11 entries and the count poke is `pea 14`. Every new path replays the
+displaced instructions and does nothing else with SCALE OFF or the
+track's switch OFF.
+
+**Measured** (2.15; the pinned emulator, the octatrick remix -- synth, SY
+DRUM, this module, TUNER, DIRECT JUMP, PROCESSOR LOAD -- on octabam
+6e4aeb76; MIDI OUT captured as the bytes the unit's MIDI port transmits;
+the reference is 2.14's image running the same scripts, and the model
+2.14's notes snapped by the rule above; the scripts and logs are in the
+author's workspace, not in this repository; emulator counts, not
+hardware figures, and nothing here ran on a unit):
+
+- **What a track plays.** Two chord sets on a MIDI track -- C#3 with +1 +3
+  +1 (a repeat, and notes that tie) and C3 with +4 +7 +11, NOTE locks on
+  three steps including 127 and 0 (notes past 127 are skipped, as stock) --
+  each played plain, with TRAN +3, with TRAN -5, with ARP SETUP KEY, and
+  with the arpeggiator (MODE 1; MODE 1 with RNGE 2 and TRAN +3; MODE 3 with
+  RNGE 1), under MAJOR C, MINOR A and PENT.MN F#: 42 captures, 652
+  note-ons and 652 note-offs, every note-on on the scale, every note-off
+  for a note that was on, each trig's notes equal to the model (a repeat
+  in one trig sent once: C#3, D3, E3 in PENT.MN F# -> C#3, E3).
+- **MIDI 1 SCALE OFF:** the same 14 patterns under the three scales (42
+  captures) equal 2.14's and SCALE OFF's. **SCALE OFF** equals 2.14 in
+  all 14. Of these
+  56 captures 41 are equal byte for byte and 15 equal once the running
+  status bytes the UART driver re-sends on a timer are set aside (a few
+  instructions more per note move the moment it fires; the notes, their
+  order and every data byte are the same).
+- **Two tracks at once** (track 1 on channel 1, track 2 on channel 2, each
+  with its own chord): both following, either one OFF, both OFF, under
+  MINOR A (and PENT.MN F#): an OFF track's channel equals 2.14, a following
+  track's equals the model, in every combination.
+- **The GRID RECORDING preview** ([TRIG] + [YES], press and release): on
+  the scale and balanced with a scale on, the same bytes as 2.14 with
+  SCALE OFF or the track's switch OFF.
+- **Nothing hangs:** SCALE, ROOT and the track's switch changed seven times
+  while chords played (LEN long), then while the arpeggiator played: 20 of
+  20 and 26 of 26 note-ons got their note-off.
+- **The 2.13 gates, unchanged:** the NOTE knob and NOTE lock walk 409 of
+  409 and the CHROMATIC keys 245 of 245 (its 246 MIDI captures equal
+  2.14's); with MIDI 1 SCALE OFF the same walks give stock's values, 409 of
+  409 and 245 of 245 against the stock rule; with every other track OFF
+  track 1 still follows, 409 and 245 against the 2.13 model. The readout
+  beside the MIDI keyboard with MIDI 1 SCALE OFF is pixel for pixel the
+  SCALE OFF one ("3"), and "A 3" again with every other track OFF.
+- **MIDI IN** thru and the auto channel played directly: the same bytes
+  as 2.14 under every SCALE. The auto channel feeding the arpeggiator:
+  snapped, as the arpeggiator's notes are.
+- **The rows** through the panel: [YES] toggles, the LEVEL knob and LEFT /
+  RIGHT step OFF / ON and stop there, MIDI 3 and MIDI 8 set their own bits
+  (`0x100b14ef` = 04, 84), SCALE / ROOT / GLIDE untouched.
+- **Saved and restored:** an older project (no line) loads with every
+  track ON; MIDI 1 OFF ([YES]) and MIDI 3 OFF (LEVEL) -> 05; PROJECT >
+  SAVE writes `#SEQUENCER_MIDI_SCALE_OFF=5` after the GLIDE line in
+  `project.work` and `project.strd`; changed and RELOADed: 05 again;
+  MIDI 2 OFF without saving, then the power cut: after the power-up (the
+  battery RAM carried over, the firmware's own power-up load; an
+  emulator build that models both) 07, the unsaved change kept as stock
+  keeps its own settings, and track 1 plays stock notes until its switch
+  is set ON; the project loaded through the loader with empty RAM: 05,
+  the saved value.
+- **Cost per note the stage sends** (the hook, `0x4009fb80` to the
+  stock code it returns to): stock 2 instructions; SCALE OFF 6; the
+  track's switch OFF 8; a scale on 48 .. 85 (mean 53 in MAJOR C, 59 in
+  MINOR A, 65 in PENT.MN F# and WHOLE B, 67 in HUNG.MIN D#). The note stage
+  per sequencer tick: mean 1,154 instructions both ways; its worst tick,
+  a four-note chord trig, 3,161 on 2.14 and up to 3,417 with a scale on
+  (+256). The DRAM unit grew by 540 B (3,952 -> 4,492 B), the ROM core by
+  4 B (192 -> 196), the three row tables by eight entries each.
 
 ## The scales
 
