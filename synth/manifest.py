@@ -505,6 +505,21 @@ ML_CUR_BOUND_HOOK = 0x40079904            # `moveq #4,%d3; cmpl %d4,%d3; bgew 0x
 ML_CUR_BOUND_STOCK = bytes.fromhex("7604" "b684" "6c00fec2")
 ML_CLAMP_HOOKS = (0x40078c22, 0x40078cb0, 0x40078d2e, 0x40078dee, 0x40078e7c)  # the machine window's row clamp after a list move
 ML_CLAMP_STOCK = bytes.fromhex("7205" "b280" "6c02" "7005")   # `moveq #5,%d1; cmpl %d0,%d1; bges +2; moveq #5,%d0`
+# 2.15: the selection guard's paste guards (machine.s fm_page_store .. fm_preview): stock's copy / paste and
+# undo write the machine byte without the lists -- the SRC page's store, the whole track's and the Part's
+# (each guarded where its paste and its undo call it) -- and the FLEX list's sample preview makes a track FLEX
+PAGE_STORE_HOOK = 0x40027e98              # `moveb %a2@(19),%d3; mvsb %d3,%d6; moveb %a2@(18),%d7` (the SRC page's store 0x40027e4c, page 0)
+PAGE_STORE_STOCK = bytes.fromhex("162a0013" "7d03" "1e2a0012")
+TRACK_PASTE_HOOK = 0x4002b962             # `pea 0x460bf218; jsr %pc@(0x4002b654)` (the whole track's paste calls its store)
+TRACK_PASTE_STOCK = bytes.fromhex("4879460bf218" "4ebafcea")
+TRACK_UNDO_HOOK = 0x4002b99e              # `pea 0x460c8122; jsr %pc@(0x4002b654)` (... its undo)
+TRACK_UNDO_STOCK = bytes.fromhex("4879460c8122" "4ebafcae")
+PART_PASTE_HOOK = 0x40029b54              # `pea 0x460bf218; jsr %pc@(0x40029a4c)` (the Part's paste calls its store)
+PART_PASTE_STOCK = bytes.fromhex("4879460bf218" "4ebafef0")
+PART_UNDO_HOOK = 0x40029b8a               # `pea 0x460c8122; jsr %pc@(0x40029a4c)` (... its undo)
+PART_UNDO_STOCK = bytes.fromhex("4879460c8122" "4ebafeba")
+PREVIEW_HOOK = 0x40096d22                 # `mvsb %a0@,%d3; movel %d3,0x46105424; moveb #1,%a0@` (the FLEX list's sample preview 0x40096c54)
+PREVIEW_STOCK = bytes.fromhex("7710" "23c346105424" "10bc0001")
 KIND_TABLE_FLEX_START = 0x400d6458       # the kind table's FLEX START callback (stock 0x4000f450)
 FLEX_START = 0x4000f450
 
@@ -786,6 +801,28 @@ MODULE = Module(
         Detour(FM_SRC_COMMIT2_HOOK, FM_SRC_COMMIT2_STOCK, "fmmachine", "fm_src_commit2",
                "the same on SRC SETUP's second path (po_machlist's detour returns to this site)",
                kind="jmp"),
+        # ---- 2.15: the selection guard on stock's paste / undo stores and the FLEX preview (machine.s) ----
+        Detour(PAGE_STORE_HOOK, PAGE_STORE_STOCK, "fmmachine", "fm_page_store",
+               "the SRC page's paste / undo store: FLEX pasted over a track whose signature place names a row is refused past the "
+               "selection guard's limits (nothing stored, the popup's message)",
+               kind="jmp", pad_to=10),
+        Detour(TRACK_PASTE_HOOK, TRACK_PASTE_STOCK, "fmmachine", "fm_track_paste",
+               "the whole track's paste: a clip whose machine is a row's (FLEX + signature) is refused past the limits of the Part it "
+               "lands in (nothing pasted: the pattern track and SY DRUM's lock rows neither)",
+               kind="jmp", pad_to=10),
+        Detour(TRACK_UNDO_HOOK, TRACK_UNDO_STOCK, "fmmachine", "fm_track_undo",
+               "the whole track's undo: the same test on what it restores",
+               kind="jmp", pad_to=10),
+        Detour(PART_PASTE_HOOK, PART_PASTE_STOCK, "fmmachine", "fm_part_paste",
+               "the Part's paste: a Part that holds more than the limits (saved by an older build) is refused whole",
+               kind="jmp", pad_to=10),
+        Detour(PART_UNDO_HOOK, PART_UNDO_STOCK, "fmmachine", "fm_part_undo",
+               "the Part's undo: the same test on what it restores",
+               kind="jmp", pad_to=10),
+        Detour(PREVIEW_HOOK, PREVIEW_STOCK, "fmmachine", "fm_preview",
+               "the FLEX list's sample preview makes a track FLEX while it plays: a track that was not FLEX loses the signature it "
+               "kept first, so the preview plays the sample and no row's machine is revived",
+               kind="jmp", pad_to=12),
         Detour(FM_VALIDATE_HOOK, FM_VALIDATE_STOCK, "fmmachine", "fm_validate",
                "the Part validator: a chosen track's twelve FLEX bytes sit out the stock clamps (FLEX's PTCH 4..124; FM SYNTH's is "
                "0..127) -- the stock defaults in their place while it runs, the FM bytes back after",

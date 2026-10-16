@@ -77,6 +77,7 @@
         .global ml_rows, fm_row
         .global ml_reset, ml_kindof, ml_became | 2.12: the machine change's init (poly.s: the marker route)
         .global ml_guard, ml_limits      | 2.15: the selection guard and its limits (machine_limits.inc)
+        .global fm_page_store, fm_track_paste, fm_track_undo, fm_part_paste, fm_part_undo, fm_preview | 2.15: the paste guards
         .include "remix.inc"             | 2.11: HAVE_SYDRUM and the shared equates (engine_abi.inc; manifest.py)
 
         .set    FM_ROW, 5                | the sixth row, the first after the stock five: FM SYNTH
@@ -265,10 +266,19 @@ ml_ko_stock:
 | it plays after it (ml_kindof, the FLEX slot being d3 / d4 when the new machine is FLEX,
 | else the Part's): different, and one of them a row's -> ml_reset to the new one. The
 | marker route: a FLEX track given an FMSYNTH* / SYNTH* slot, or a marker track given a
-| sample, a STATIC slot... Preserves every register.
+| sample, a STATIC slot... 2.15: a track that leaves FLEX keeps no signature (cleared
+| after its init), and FLEX given to a track that was not FLEX revives none (cleared
+| before: the slot assigned plays) -- a row's machine comes from a guarded write only.
+| Preserves every register.
 ml_became:
         lea     -24(%sp),%sp
         movem.l %d0-%d5,(%sp)
+        cmpi.l  #FLEX,%d1
+        bne     ml_bc_kinds
+        cmpi.l  #FLEX,%d0
+        beq     ml_bc_kinds              | FLEX to FLEX: the track keeps its machine
+        bsr     ml_unsign_t              | (2.15) FLEX given now: no signature revived
+ml_bc_kinds:
         move.l  %d1,%d5                  | the new machine
         cmpi.l  #FLEX,%d1
         beq     ml_bc_slots              | the FLEX column's slots are d3 (before) and d4 (after)
@@ -287,6 +297,10 @@ ml_bc_slots:
         move.l  %d5,%d1                  | the new machine (the column of a stock init)
         bsr     ml_reset
 ml_bc_out:
+        cmpi.l  #FLEX,%d5
+        beq     ml_bc_rts
+        bsr     ml_unsign_t              | (2.15) not FLEX now: the signature goes
+ml_bc_rts:
         movem.l (%sp),%d0-%d5
         lea     24(%sp),%sp
         rts
@@ -638,13 +652,22 @@ fm_sc_refuse:
 |             ML_SY_WITH_FM SY DRUM tracks ("FM+SY DRUM: LIMIT");
 |   SY DRUM:  ML_SY_MAX SY DRUM tracks already ("SY DRUM: 2 MAX"), or an FM SYNTH
 |             track and ML_SY_WITH_FM SY DRUM tracks ("FM+SY DRUM: LIMIT").
-| The limits are read from ml_limits. Preserves every other register.
+| The limits are read from ml_limits. Preserves every other register. ml_guard_p: the
+| same for a0 = any Part (the paste guards: the Part a stock paste writes into).
         .set    LIM_FM, 0                | ml_limits: the three bytes
         .set    LIM_SY, 1
         .set    LIM_SYFM, 2
 ml_guard:
-        lea     -24(%sp),%sp
-        movem.l %d1-%d5/%a0,(%sp)
+        move.l  %a0,-(%sp)
+        bsr     ml_part                  | a0 = the current Part
+        bsr     ml_guard_p
+        movea.l (%sp)+,%a0
+        tst.l   %d0
+        rts
+ml_guard_p:
+        lea     -28(%sp),%sp
+        movem.l %d1-%d5/%a0-%a1,(%sp)
+        movea.l %a0,%a1                  | a1 = the Part
         move.l  %d1,%d0
         subq.l  #FM_ROW,%d0
         cmpi.l  #ML_COUNT,%d0
@@ -652,7 +675,7 @@ ml_guard:
         lea     ml_rows(%pc),%a0
         movea.l (%a0,%d0.l*4),%a0
         mvz.b   RD_KIND(%a0),%d5         | the machine chosen: 1 FM SYNTH, 2 SY DRUM
-        bsr     ml_part                  | a0 = the Part
+        movea.l %a1,%a0                  | a0 = the Part
         move.l  %d2,%d0
         bsr     ml_sigkind
         cmp.l   %d5,%d0
@@ -709,8 +732,8 @@ ml_gd_both:
 ml_gd_msg:
         move.l  %a0,%d0
 ml_gd_out:
-        movem.l (%sp),%d1-%d5/%a0
-        lea     24(%sp),%sp
+        movem.l (%sp),%d1-%d5/%a0-%a1
+        lea     28(%sp),%sp
         tst.l   %d0
         rts
 | ml_sigkind: a0 = a Part, d0 = a track -> d0 = the machine its signature names: the row's
@@ -748,6 +771,264 @@ ml_toast:
         move.l  %d0,-(%sp)
         jsr     TOAST
         addq.l  #8,%sp
+        rts
+
+| ---- the paste guards (2.15). Stock's copy / paste and its undo write a track's machine
+| byte without either list: the SRC page (FUNC + REC / FUNC + STOP on the SRC page: the
+| machine, its slot and its PLAYBACK column), the whole track (FUNC + REC / FUNC + STOP in
+| SRC SETUP: the machine, the 30 PLAYBACK bytes with the signature, every page and the
+| pattern track) and the Part (the PART window: all of it). Each store is guarded where
+| it starts, for a paste and for an undo alike (an undo restores what a paste or a clear
+| replaced). A store that would give the Part a row's machine past the limits is refused
+| as a choice in the lists is: nothing is written (the pattern track and SY DRUM's lock
+| rows included), the clipboard is kept, stock's own "nothing stored" exit is taken, and
+| the popup shows the same message. A Part paste is refused whole when the Part pasted
+| holds more than the limits (a Part saved by an older build); a Part within them pastes
+| as in 2.14. A track that leaves FLEX keeps no signature, and FLEX given to a track that
+| was not FLEX does not revive one (ml_became, fm_preview): only a guarded write makes a
+| row's machine.
+        .set    CLIP_BUF, 0x460bf218     | stock's clipboard (a page, a track, a Part ...)
+        .set    UNDO_BUF, 0x460c8122     | stock's undo buffer (the same layouts)
+        .set    PAGE_STORE_RET, 0x40027ea2 | the SRC page's store (0x40027e4c, page 0), after the three loads
+        .set    PAGE_STORE_NONE, 0x40028f2e | ... its "nothing stored" exit (d0 := 0)
+        .set    FULL_STORE, 0x4002b654   | the whole track's store (clip, pattern, track)
+        .set    TRACK_PASTE_RET, 0x4002b96c | its paste, after the store
+        .set    TRACK_PASTE_NONE, 0x4002b980 | ... its "nothing pasted" exit (d0 := 0)
+        .set    TRACK_UNDO_RET, 0x4002b9a8 | its undo, after the store
+        .set    PART_STORE, 0x40029a4c   | the Part's store (clip, part)
+        .set    PART_PASTE_RET, 0x40029b5e | its paste, after the store
+        .set    PART_PASTE_NONE, 0x40029b70 | ... its "nothing pasted" exit (d0 := 0)
+        .set    PART_UNDO_RET, 0x40029b94 | its undo, after the store
+        .set    TS_MACH, 2334            | the whole track's clip: the machine byte ...
+        .set    TS_SIG, 2335 + 18        | ... its 30 PLAYBACK bytes at 2335: the signature's place
+        .set    PATTERN_SIZE, 36568      | a pattern in the bank blob ...
+        .set    PAT_PART, 36438 + 1      | ... and its Part (a signed byte)
+        .set    PREVIEW_SAVE, 0x46105424 | the FLEX preview's saved machine
+        .set    PREVIEW_RET, 0x40096d2e
+| 0x40027e98 (jmp, 10 B): the SRC page's store (d4 = the Part, d5 = the track, a2 = the
+| clip): displaced `moveb %a2@(19),%d3; mvsb %d3,%d6; moveb %a2@(18),%d7` (the machine and
+| its slot). FLEX pasted over a track whose signature place holds a row's signature makes
+| that machine (the signature is not written by this store): guarded.
+fm_page_store:
+        move.b  19(%a2),%d3              | displaced: the machine pasted
+        mvs.b   %d3,%d6                  | displaced
+        move.b  18(%a2),%d7              | displaced: its slot
+        cmpi.l  #FLEX,%d6
+        bne     fm_ps_go                 | another machine: no row's
+        lea     -16(%sp),%sp
+        movem.l %d1-%d2/%a0-%a1,(%sp)
+        move.l  %d4,%d0
+        bsr     ml_partn                 | a0 = the Part pasted into
+        move.l  %d5,%d2                  | the track
+        bsr     ml_rowat                 | d1 = the row its signature names
+        bmi     fm_ps_ok
+        bsr     ml_guard_p
+        bne     fm_ps_refuse
+fm_ps_ok:
+        movem.l (%sp),%d1-%d2/%a0-%a1
+        lea     16(%sp),%sp
+fm_ps_go:
+        jmp     PAGE_STORE_RET
+fm_ps_refuse:
+        movem.l (%sp),%d1-%d2/%a0-%a1
+        lea     16(%sp),%sp
+        bsr     ml_toast
+        jmp     PAGE_STORE_NONE
+| 0x4002b962 / 0x4002b99e (jmp, 10 B each): the whole track's paste and its undo call the
+| store: displaced `pea CLIP_BUF / UNDO_BUF; jsr %pc@(FULL_STORE)` (replayed by its
+| address); the store's other two arguments are on the stack (0(sp) the pattern, 4(sp) the
+| track).
+fm_track_paste:
+        lea     CLIP_BUF,%a1
+        bsr     ml_trackchk
+        bne     fm_tp_refuse
+        pea     (CLIP_BUF).l             | displaced
+        jsr     FULL_STORE               | displaced
+        jmp     TRACK_PASTE_RET
+fm_tp_refuse:
+        bsr     ml_toast
+        addq.l  #8,%sp                   | the store's two arguments
+        jmp     TRACK_PASTE_NONE
+fm_track_undo:
+        lea     UNDO_BUF,%a1
+        bsr     ml_trackchk
+        bne     fm_tu_refuse
+        pea     (UNDO_BUF).l             | displaced
+        jsr     FULL_STORE               | displaced
+        jmp     TRACK_UNDO_RET
+fm_tu_refuse:
+        bsr     ml_toast
+        addq.l  #8,%sp                   | the store's two arguments
+        moveq   #0,%d0                   | nothing restored (the undo's own answer when it has nothing)
+        rts
+| ml_trackchk: a1 = a whole track's clip, 4(sp) = the pattern, 8(sp) = the track (the
+| caller's store arguments) -> d0 = 0 when storing it is allowed, else the message; tst.l
+| done. Clobbers d0 only.
+ml_trackchk:
+        lea     -16(%sp),%sp
+        movem.l %d1-%d2/%a0/%a2,(%sp)
+        moveq   #0,%d0
+        mvz.b   TS_MACH(%a1),%d1
+        cmpi.l  #FLEX,%d1
+        bne     ml_tc_out                | another machine: no row's
+        lea     TS_SIG(%a1),%a0
+        bsr     ml_sigrow
+        bmi     ml_tc_ok                 | FLEX with no signature: a sample track
+        addq.l  #FM_ROW,%d0
+        movea.l %d0,%a2                  | the row pasted
+        move.l  20(%sp),%d0              | the pattern
+        move.l  #PATTERN_SIZE,%d1
+        muls.l  %d1,%d0
+        movea.l PART_PTR,%a0
+        adda.l  %d0,%a0
+        adda.l  #PAT_PART,%a0
+        mvs.b   (%a0),%d0                | its Part: the one stock's store writes
+        move.l  #6322,%d1
+        muls.l  %d1,%d0
+        movea.l PART_PTR,%a0
+        adda.l  %d0,%a0
+        move.l  %a2,%d1
+        move.l  24(%sp),%d2              | the track
+        bsr     ml_guard_p
+        bra     ml_tc_out
+ml_tc_ok:
+        moveq   #0,%d0
+ml_tc_out:
+        movem.l (%sp),%d1-%d2/%a0/%a2
+        lea     16(%sp),%sp
+        tst.l   %d0
+        rts
+| 0x40029b54 / 0x40029b8a (jmp, 10 B each): the Part's paste and its undo call the store:
+| displaced `pea CLIP_BUF / UNDO_BUF; jsr %pc@(PART_STORE)` (replayed by its address); the
+| Part's index is on the stack. The buffer holds a whole Part from its +0.
+fm_part_paste:
+        lea     CLIP_BUF-PART_OFF,%a0
+        bsr     ml_part_over
+        bne     fm_pp_refuse
+        pea     (CLIP_BUF).l             | displaced
+        jsr     PART_STORE               | displaced
+        jmp     PART_PASTE_RET
+fm_pp_refuse:
+        bsr     ml_toast
+        addq.l  #4,%sp                   | the store's other argument
+        jmp     PART_PASTE_NONE
+fm_part_undo:
+        lea     UNDO_BUF-PART_OFF,%a0
+        bsr     ml_part_over
+        bne     fm_pu_refuse
+        pea     (UNDO_BUF).l             | displaced
+        jsr     PART_STORE               | displaced
+        jmp     PART_UNDO_RET
+fm_pu_refuse:
+        bsr     ml_toast
+        addq.l  #4,%sp
+        moveq   #0,%d0
+        rts
+| ml_part_over: a0 = a Part -> d0 = 0 when its eight tracks are within the limits, else
+| the message (as ml_guard's); tst.l done. Preserves every other register.
+ml_part_over:
+        lea     -20(%sp),%sp
+        movem.l %d1/%d3-%d4/%a0-%a1,(%sp)
+        moveq   #0,%d3                   | FM SYNTH tracks
+        moveq   #0,%d4                   | SY DRUM tracks
+        moveq   #0,%d1
+ml_po_track:
+        move.l  %d1,%d0
+        bsr     ml_sigkind
+        cmpi.l  #1,%d0
+        bne     ml_po_sy
+        addq.l  #1,%d3
+ml_po_sy:
+        cmpi.l  #2,%d0
+        bne     ml_po_next
+        addq.l  #1,%d4
+ml_po_next:
+        addq.l  #1,%d1
+        cmpi.l  #8,%d1
+        bne     ml_po_track
+        lea     ml_limits(%pc),%a1
+        lea     ml_msg_fm(%pc),%a0
+        mvz.b   LIM_FM(%a1),%d0
+        cmp.l   %d0,%d3
+        bhi     ml_po_msg                | more FM SYNTH tracks than allowed
+        lea     ml_msg_sy(%pc),%a0
+        mvz.b   LIM_SY(%a1),%d0
+        cmp.l   %d0,%d4
+        bhi     ml_po_msg                | more SY DRUM tracks than allowed
+        lea     ml_msg_both(%pc),%a0
+        tst.l   %d3
+        beq     ml_po_ok
+        mvz.b   LIM_SYFM(%a1),%d0
+        cmp.l   %d0,%d4
+        bhi     ml_po_msg                | more SY DRUM tracks than FM SYNTH allows beside it
+ml_po_ok:
+        suba.l  %a0,%a0
+ml_po_msg:
+        move.l  %a0,%d0
+        movem.l (%sp),%d1/%d3-%d4/%a0-%a1
+        lea     20(%sp),%sp
+        tst.l   %d0
+        rts
+| 0x40096d22 (jmp, 12 B): the sample preview of the FLEX list (0x40096c54: d4 = the track
+| of the current Part, a0 = its machine byte) makes the track FLEX while it plays and puts
+| the machine back after: displaced `mvsb %a0@,%d3; movel %d3,PREVIEW_SAVE; moveb #1,%a0@`.
+| A track that is not FLEX loses the signature it kept, so the preview plays the sample.
+fm_preview:
+        mvs.b   (%a0),%d3                | displaced: the machine before the preview
+        move.l  %d3,PREVIEW_SAVE         | displaced
+        cmpi.l  #FLEX,%d3
+        beq     fm_pv_flex               | FLEX already: the track plays what it played
+        move.l  %d2,-(%sp)
+        move.l  %d4,%d2
+        bsr     ml_unsign_t
+        move.l  (%sp)+,%d2
+fm_pv_flex:
+        move.b  #FLEX,(%a0)              | displaced
+        jmp     PREVIEW_RET
+| ml_unsign_t: d2 = a track of the current Part -> a row's signature in its signature
+| place cleared, in the Part and its shadow. Preserves every register.
+ml_unsign_t:
+        lea     -16(%sp),%sp
+        movem.l %d0-%d1/%a0-%a1,(%sp)
+        bsr     ml_part
+        move.l  %a0,%d1
+        sub.l   PART_PTR,%d1             | part * 6322
+        move.l  %d2,%d0
+        mulu.w  #30,%d0
+        addi.l  #SIG_OFF,%d0
+        add.l   %d0,%d1
+        adda.l  %d0,%a0                  | the Part's signature place
+        bsr     fm_unsign
+        lea     PART_SHADOW,%a0
+        adda.l  %d1,%a0                  | ... its shadow
+        bsr     fm_unsign
+        movem.l (%sp),%d0-%d1/%a0-%a1
+        lea     16(%sp),%sp
+        rts
+| ml_partn: d0 = a Part's index -> a0 = the Part (the bank blob + index * 6322). Clobbers d0.
+ml_partn:
+        move.l  %d1,-(%sp)
+        move.l  #6322,%d1
+        muls.l  %d1,%d0
+        movea.l PART_PTR,%a0
+        adda.l  %d0,%a0
+        move.l  (%sp)+,%d1
+        rts
+| ml_rowat: a0 = a Part, d2 = a track -> d1 = the row (FM_ROW + its index in ml_rows) whose
+| signature the track's signature place holds, whatever its machine byte, else -1; tst.l
+| done. Clobbers d0.
+ml_rowat:
+        move.l  %a0,-(%sp)
+        move.l  %d2,%d1
+        mulu.w  #30,%d1
+        adda.l  %d1,%a0
+        adda.l  #SIG_OFF,%a0
+        bsr     ml_sigrow
+        movea.l (%sp)+,%a0
+        bmi     ml_ra_none
+        addq.l  #FM_ROW,%d0
+ml_ra_none:
+        move.l  %d0,%d1
         rts
 
 | ---- fm_type: d0 = a machine read through a0 = a pointer to it -> d0 = 5 + the row's
