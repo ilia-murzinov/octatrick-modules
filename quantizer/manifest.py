@@ -162,7 +162,8 @@ release or nothing held: stock, byte for byte, and a sample track is stock
 GLIDE is the slide time only now).
 
 PARAPHONIC KEYS (24 Sep 2026). On a FLEX track whose assigned slot holds a
-SYNTH* sample and whose Part's VOIC byte (the synth's LFO page slot 2, 2..4
+SYNTH* sample (2.15: a track with FM SYNTH chosen in the machine list; the
+marker selects nothing) and whose Part's VOIC byte (the synth's LFO page slot 2, 2..4
 = paraphonic, modules/synth/poly.s) says so, the CHROMATIC keys are
 polyphonic: a third detour on the handler's release path (qz_leg0,
 0x4004fbde) and the two legato detours keep a per-track held-key mask and

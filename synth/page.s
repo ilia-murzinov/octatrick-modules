@@ -4,8 +4,9 @@
 | the bytes depend on the address.
 |
 | WHAT: when FM SYNTH is chosen in the track's machine list (2.10: FLEX with the Part's
-| "FM", 1, machine.s) or the current track's FLEX slot holds an FMSYNTH*- (or SYNTH*-)
-| named sample, the PLAYBACK page presents the FM voice instead of a sample player -- the slot
+| "FM", 1, machine.s; until 2.14 also when the current track's FLEX slot held an FMSYNTH*-
+| or SYNTH*-named sample: that marker selects nothing since 2.15), the PLAYBACK page
+| presents the FM voice instead of a sample player -- the slot
 | names read PTCH RATO INDX FINE FDBK DEC (four characters: the boxes are 19 px), the values format as the voice
 | understands them (RATIO from the ratio table "0.25".."16", INDEX and FDBK
 | 0..127, DECAY as the milliseconds alone / "1.1s" / "HOLD" at 127 -- four characters
@@ -73,10 +74,7 @@
         .set    RESOLVER_RET, 0x40031ed6
         .set    FLEX_P, 0x400d31ae       | the stock FLEX PLAYBACK descriptor (P form)
         .set    KIND_FLEX, 0x400d6438    | the kind table's FLEX entry: sy_render's address (the manifest's SymbolRef)
-        .set    SLOT_OFF, 0x8f04b        | Part: 0x8f04a + track*5 + machine (1 = FLEX)
         .set    SIG_OFF, 0x8edbc         | Part: 0x8ed80 + 0x3c + track*30: the NEIGHBOR column, "FM", 1 (machine.s)
-        .set    SETTINGS_BASE, 0x100b14f0
-        .set    SETTINGS_STRIDE, 0x448
         .set    STOCK_WIDGET, 0x400479b4
         .set    BLIT, 0x400128a8
         .set    SPRINTF, 0x40013a08
@@ -114,55 +112,10 @@ pg_resolve:
         addal   #SIG_OFF,%a0
         mvzw    %a0@,%d5
         cmpil   #0x464d,%d5
-        bne     pg_unsigned
-        mvzb    %a0@(2),%d5
-        cmpil   #1,%d5
-        beq     pg_synth
-pg_unsigned:
-        movel   %d3,%d4
-        lsll    #2,%d4
-        addl    %d3,%d4                  | track * 5
-        addl    %d4,%d2
-        moveal  %d2,%a0
-        addal   #SLOT_OFF,%a0
-        mvzb    %a0@,%d2                 | the track's FLEX slot, 0-based
-        cmpil   #127,%d2
-        bhi     pg_r_done                | 0xff = none; 128.. = the recorder buffers
-        movel   #SETTINGS_STRIDE,%d4
-        mulsl   %d2,%d4
-        addil   #SETTINGS_BASE,%d4
-        moveal  %d4,%a0                  | the slot's settings record; its path at +0
-        | (nothing else is tested: the byte at +0x129 the first build gated on as
-        | a "loaded" flag is the sample's QUANTIZED TRIG attribute, -1 = OFF for
-        | a sample loaded through the file browser -- the trig routine 0x40005102
-        | only chooses between an immediate and a quantized manual trig on it; an
-        | empty slot has an empty path and fails the name compare below)
-        moveal  %a0,%a1                  | a1 = the file name (after the last '/')
-        movel   #255,%d4
-pg_scan:
-        mvzb    %a0@+,%d5
-        beq     pg_scanned
-        cmpil   #'/',%d5
-        bne     pg_scan1
-        moveal  %a0,%a1
-pg_scan1:
-        subql   #1,%d4
-        bne     pg_scan
-pg_scanned:
-        movew   #0x464d,%d5              | "FM": FMSYNTH* is the marker name too
-        cmpw    %a1@,%d5
-        bne     pg_fm
-        addql   #2,%a1
-pg_fm:
-        lea     pg_name(%pc),%a0
-        moveq   #5,%d4
-pg_cmp:
-        mvzb    %a0@+,%d5
-        mvzb    %a1@+,%d2
-        cmpl    %d2,%d5
+        bne     pg_r_done                | (2.15) not chosen in the list: the FLEX page -- an
+        mvzb    %a0@(2),%d5              | FMSYNTH* / SYNTH* sample file selects nothing (the
+        cmpil   #1,%d5                   | marker path is off; poly.s po_slot_marker)
         bne     pg_r_done
-        subql   #1,%d4
-        bne     pg_cmp
 pg_synth:
         moveal  KIND_FLEX,%a0            | the kind table's FLEX entry: poly.s's sy_render
         moveal  %a0@(-4),%a0             | the long before it: po_pgdesc
@@ -170,8 +123,6 @@ pg_synth:
         jsr     %a0@                     | d0 = the synth's descriptor (a1: the list; d0/d1/a0/a1 clobbered)
 pg_r_done:
         jmp     RESOLVER_RET
-pg_name:
-        .ascii  "SYNTH"
         .align  4
 | ---- what the clone changes: {offset.w, length.w, source.l} into the stock FLEX
 | record, applied by po_pgdesc over its copy; a negative offset ends the list.

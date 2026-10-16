@@ -370,53 +370,18 @@ sy_render:
         bsr     sy_machine               | d0 := the track's machine (the Part's byte; clobbers d0, d1, a0)
         subq.l  #1,%d0
         bne     sy_no                    | not FLEX (a STATIC track, kind 0, comes here since 2.8): a sample, no marker scan
-        bsr     po_signed                | FM SYNTH chosen in the machine list (machine.s): a synth, no marker scan
+        bsr     po_signed                | FM SYNTH chosen in the machine list (machine.s): a synth
         .if     HAVE_SYDRUM
         bne     sy_listed                | (2.11: or SY DRUM -- d0 = the row's engine kind)
         .else
         bne     sy_cold
         .endif
-        move.l  #VOICE_STRIDE,%d3
-        muls.l  %d2,%d3
-        lea     VOICE_BASE,%a0
-        move.l  8(%a0,%d3.l),%a0         | the new voice's settings record
-        move.l  %a0,%d3
-        beq     sy_no
-        subi.l  #SETTINGS_BASE,%d3       | only a pointer INTO the settings table is scanned
-        cmpi.l  #SETTINGS_SPAN,%d3       | (after power-on the unit's RAM holds garbage and a
-        bhs     sy_no                    | refused start leaves the old value)
-        move.l  %a0,%a1                  | a1 = start of the file name
-        move.l  #255,%d3
-sy_scan:
-        mvz.b   (%a0)+,%d1
-        beq     sy_scanned
-        cmpi.l  #'/',%d1
-        bne     sy_scan1
-        move.l  %a0,%a1                  | after the last '/'
-sy_scan1:
-        subq.l  #1,%d3
-        bne     sy_scan
-sy_scanned:
-        move.w  #0x464d,%d1              | "FM": FMSYNTH* is the marker name too
-        cmp.w   (%a1),%d1
-        bne     sy_fm
-        addq.l  #2,%a1
-sy_fm:
-        lea     sy_name(%pc),%a0
-        moveq   #5,%d3
-sy_cmp:
-        mvz.b   (%a0)+,%d1
-        mvz.b   (%a1)+,%d5
-        cmp.l   %d5,%d1
-        bne     sy_no
-        subq.l  #1,%d3
-        bne     sy_cmp
+        bra     sy_no                    | (2.15) not chosen in the list: a sample -- an FMSYNTH* / SYNTH* file is a sample too
         .if     HAVE_SYDRUM
 | ---- (2.11) the engine of this START: sy1_kind[track] (sy-drum/sydrum.s) 0 FM, 1 SY DRUM --
 | the development line's sy_kind_found. A track whose engine changes starts cold (the other engine's
 | level, its voices freed); a SY DRUM START runs that engine's trigger (sd_trigger: its LFO's
 | outputs brought up to this frame, both envelopes recharged, warm keeps phase and filter).
-        moveq   #1,%d0                   | an FM marker: FM
 sy_listed:                               | d0 = the engine kind of the machine-list row (1 FM, 2 SY DRUM)
         subq.l  #1,%d0
         move.l  %d0,%d5                  | the engine: 0 FM, 1 SY DRUM
@@ -3228,45 +3193,7 @@ po_lfopage:
         movem.l (%sp),%d0                | (flags kept)
         lea     4(%sp),%sp
         bne     po_lp_clone
-        move.l  %d3,%d4
-        lsl.l   #2,%d4
-        add.l   %d3,%d4                  | track * 5
-        add.l   %d4,%d2
-        move.l  %d2,%a0
-        add.l   #SLOT_OFF,%a0
-        mvz.b   (%a0),%d2                | the track's FLEX slot, 0-based
-        cmpi.l  #127,%d2
-        bhi     po_lp_done               | 0xff = none; 128.. = the recorder buffers
-        move.l  #SETTINGS_STRIDE,%d4
-        muls.l  %d2,%d4
-        addi.l  #SETTINGS_BASE,%d4
-        move.l  %d4,%a0                  | the slot's settings record; its path at +0
-        move.l  %a0,%a1
-        move.l  #255,%d4
-po_lp_scan:
-        mvz.b   (%a0)+,%d5
-        beq     po_lp_scanned
-        cmpi.l  #'/',%d5
-        bne     po_lp_scan1
-        move.l  %a0,%a1
-po_lp_scan1:
-        subq.l  #1,%d4
-        bne     po_lp_scan
-po_lp_scanned:
-        move.w  #0x464d,%d5              | "FM": FMSYNTH* is the marker name too
-        cmp.w   (%a1),%d5
-        bne     po_lp_fm
-        addq.l  #2,%a1
-po_lp_fm:
-        lea     sy_name(%pc),%a0
-        moveq   #5,%d4
-po_lp_cmp:
-        mvz.b   (%a0)+,%d5
-        mvz.b   (%a1)+,%d2
-        cmp.l   %d2,%d5
-        bne     po_lp_done
-        subq.l  #1,%d4
-        bne     po_lp_cmp
+        bra     po_lp_done               | (2.15) not chosen: the stock LFO page (the marker file selects nothing)
 po_lp_clone:
         lea     po_lfodesc(%pc),%a1
         tst.b   po_lfo_built
@@ -4505,8 +4432,8 @@ po_lockw:
 
 | ---- po_is_synth: d2 = track -> d0 = 1 when a FLEX track whose FM SYNTH machine is
 | chosen in the machine list ("FM", 1 in the Part: po_signed, 2.10) or whose Part slot
-| holds a SYNTH* / FMSYNTH* sample (the quantizer's qz_is_synth, read here from the
-| Part and the settings table), else 0; tst.l d0 done. Preserves every other register.
+| holds a marker (po_slot_marker: since 2.15 no slot does -- the marker path is off),
+| else 0; tst.l d0 done. Preserves every other register.
 po_is_synth:
         bsr     po_signed                | FM SYNTH chosen in the machine list (machine.s)
         .if     HAVE_SYDRUM
@@ -4706,54 +4633,15 @@ po_fst_stock:
         lea     8(%sp),%sp
         jmp     FLEX_START
 
-| ---- po_slot_marker: d0 = a FLEX slot (0-based) -> d0 = 1 when the slot's sample
-| is named FMSYNTH* / SYNTH* (the settings record's path, loaded into flex RAM or
-| not), else 0 (a slot above 127 -- none, or a recorder buffer -- is never one);
-| tst.l done. Clobbers d0 only. po_is_synth's scan, shared with the assigners
-| (po_became, 28 Sep 2026).
+| ---- po_slot_marker: d0 = a FLEX slot (0-based) -> d0 = 1 when the slot's sample is a
+| marker. 2.15: always 0 -- the marker path is off (the selection guard counts the machines
+| the lists give; a FLEX track whose slot holds an FMSYNTH* / SYNTH* file plays that file as
+| a sample, and FM SYNTH is chosen in the list). Until 2.14 the slot's file name was read
+| here (the 2.10 marker); po_is_synth, the assigners (po_became), the file browser
+| (po_loadsel, po_unload) and machine.s (ml_kindof, ml_flexmark) ask it and get no marker.
+| tst.l done. Clobbers d0 only.
 po_slot_marker:
-        lea     -16(%sp),%sp
-        movem.l %d1/%d3/%a0/%a1,(%sp)
-        cmpi.l  #127,%d0
-        bhi     po_sm_no                 | none, or a recorder buffer
-        move.l  #SETTINGS_STRIDE,%d1
-        mulu.l  %d1,%d0
-        addi.l  #SETTINGS_BASE,%d0
-        movea.l %d0,%a0                  | the settings record: its path at +0
-        movea.l %a0,%a1
-        move.l  #255,%d3
-po_sm_scan:
-        mvz.b   (%a0)+,%d0
-        beq     po_sm_scanned
-        cmpi.l  #'/',%d0
-        bne     po_sm_scan1
-        movea.l %a0,%a1                  | after the last '/'
-po_sm_scan1:
-        subq.l  #1,%d3
-        bne     po_sm_scan
-po_sm_scanned:
-        move.w  #0x464d,%d0              | "FM": FMSYNTH* is the marker name too
-        cmp.w   (%a1),%d0
-        bne     po_sm_fm
-        addq.l  #2,%a1
-po_sm_fm:
-        lea     sy_name(%pc),%a0
-        moveq   #5,%d3
-po_sm_cmp:
-        mvz.b   (%a0)+,%d0
-        mvz.b   (%a1)+,%d1
-        cmp.l   %d1,%d0
-        bne     po_sm_no
-        subq.l  #1,%d3
-        bne     po_sm_cmp
-        moveq   #1,%d0
-        bra     po_sm_out
-po_sm_no:
         moveq   #0,%d0
-po_sm_out:
-        movem.l (%sp),%d1/%d3/%a0/%a1
-        lea     16(%sp),%sp
-        tst.l   %d0
         rts
 
 | ---- po_polytrack: d2 = track -> d0 = 1 when a synth track whose Part VOIC byte
@@ -6146,8 +6034,6 @@ po_dirty:
         jmp     UNDO_RESET
 
 | ---- data ----------------------------------------------------------------------
-sy_name:
-        .ascii  "SYNTH"
 po_chrd:
         .ascii  "CHRD\0\0"
 po_voic:

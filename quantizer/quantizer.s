@@ -254,15 +254,15 @@ qz_pt_out:
 qz_pt_ret:
         rts
 
-| qz_is_synth: d0 := 1 (NE) when track d2's machine is FLEX and either the FM
-| SYNTH machine is chosen (the Part's "FM", 1) or its assigned
-| FLEX slot's settings record names a SYNTH* file -- the synth page's own test
-| (modules/synth/page.s pg_resolve): slot = Part + 0x8f04a + track*5 + 1, its
-| record 0x100b14f0 + 0x448*slot, the path at +0 scanned for the basename.
+| qz_is_synth: d0 := 1 (NE) when track d2's machine is FLEX and the FM SYNTH
+| machine is chosen (the Part's "FM", 1; 2.11: 2 for SY DRUM's "SY", 1) -- the
+| synth page's own test (modules/synth/page.s pg_resolve). Until 2.14 a FLEX slot
+| whose sample was named SYNTH* / FMSYNTH* counted too; that marker selects nothing
+| since 2.15 (the synth's selection guard counts the machines the lists give).
 | Preserves everything but d0.
         .if     HAVE_SYDRUM
-| qz_fmtrack (2.11): d0 := 1 (NE) when track d2 plays FM (qz_is_synth's 1: FM SYNTH chosen
-| or a SYNTH* marker), 0 for SY DRUM (2) and sample tracks. Preserves everything but d0.
+| qz_fmtrack (2.11): d0 := 1 (NE) when track d2 plays FM (qz_is_synth's 1: FM SYNTH chosen),
+| 0 for SY DRUM (2) and sample tracks. Preserves everything but d0.
 qz_fmtrack:
         jbsr    qz_is_synth
         subq.l  #1,%d0
@@ -291,65 +291,23 @@ qz_is_synth:
         .if     HAVE_SYDRUM
         mvz.b   2(%a1),%d0              | (2.11) or SY DRUM (sy-drum/): "SY", 1 -- its PTCH is semitones
         subq.l  #1,%d0                  | too, its keys and locks as FM SYNTH's
-        jbne    qz_is_unsigned
+        jbne    qz_is_no
         mvz.w   (%a1),%d0
         cmpi.l  #0x464d,%d0             | "FM": 1
         jbeq    qz_is_fmsig
         cmpi.l  #0x5359,%d0             | "SY": 2
-        jbne    qz_is_unsigned
+        jbne    qz_is_no
         moveq   #2,%d0
         jbra    qz_is_out
 qz_is_fmsig:
         .else
         mvz.w   (%a1),%d0
         cmpi.l  #0x464d,%d0
-        jbne    qz_is_unsigned
+        jbne    qz_is_no
         mvz.b   2(%a1),%d0
         subq.l  #1,%d0
-        jbne    qz_is_unsigned
-        .endif
-        moveq   #1,%d0
-        jbra    qz_is_out
-qz_is_unsigned:
-        move.l  %d2,%d0
-        lsl.l   #2,%d0
-        add.l   %d2,%d0                 | track * 5
-        adda.l  %d0,%a0
-        adda.l  #0x8f04b,%a0
-        mvz.b   (%a0),%d0               | its FLEX slot, 0-based
-        moveq   #127,%d1
-        cmp.l   %d1,%d0
-        jbhi    qz_is_no                | none, or a recorder buffer
-        move.l  #0x448,%d1
-        mulu.l  %d1,%d0
-        addi.l  #0x100b14f0,%d0
-        move.l  %d0,%a0                 | the settings record; its path at +0
-        move.l  %a0,%a1
-        move.l  #255,%d3
-qz_is_scan:
-        mvz.b   (%a0)+,%d0
-        jbeq    qz_is_scanned
-        cmpi.l  #'/',%d0
-        jbne    qz_is_scan1
-        move.l  %a0,%a1                 | after the last '/'
-qz_is_scan1:
-        subq.l  #1,%d3
-        jbne    qz_is_scan
-qz_is_scanned:
-        move.w  #0x464d,%d0             | "FM": FMSYNTH* is the marker name too
-        cmp.w   (%a1),%d0
-        jbne    qz_is_fm
-        addq.l  #2,%a1
-qz_is_fm:
-        lea     qz_synthname(%pc),%a0
-        moveq   #5,%d3
-qz_is_cmp:
-        mvz.b   (%a0)+,%d0
-        mvz.b   (%a1)+,%d1
-        cmp.l   %d1,%d0
         jbne    qz_is_no
-        subq.l  #1,%d3
-        jbne    qz_is_cmp
+        .endif
         moveq   #1,%d0
         jbra    qz_is_out
 qz_is_no:
@@ -1727,7 +1685,6 @@ qz_fmt3:        .asciz  "#SEQUENCER_ROOT=%d\r\n"
 qz_lbl_scale:   .asciz  "SCALE"
 qz_lbl_root:    .asciz  "ROOT"
 qz_lbl_glide:   .asciz  "GLIDE"
-qz_synthname:   .ascii  "SYNTH"
         .balign 4
 qz_gbuf:        .fill   8, 1, 0          | the GLIDE row's number (RAM)
 qz_ofmt:        .fill   8, 1, 0          | the keyboard's octave format with ROOT's name: "A# %d" (RAM)

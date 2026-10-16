@@ -327,8 +327,10 @@ line loads as OFF.
 `modules/synth`'s tuning system makes a synth track's PTCH byte semitones
 (raw 64 = 0, one unit a semitone, -64..+63; its page clone gives the slot
 the range 0..127) and its RATE byte FINE (cents). This unit follows those
-units on a synth track (`qz_is_synth` / `qz_ui_synth`: FLEX, the assigned
-slot's sample named SYNTH*) and leaves sample tracks byte for byte:
+units on a synth track (`qz_is_synth` / `qz_ui_synth`: FLEX with FM SYNTH or SY
+DRUM chosen in the machine list; until 2.14 also a FLEX slot's sample named
+SYNTH*, a marker that selects nothing since 2.15) and leaves sample tracks byte
+for byte:
 
 - **The PTCH knob and the p-lock editor** (`qz_knob`, `qz_plock` ->
   `qz_quant`): a degree is a raw whose pitch class (raw - 64) mod 12 is in
@@ -743,7 +745,8 @@ the unit is **3,224 B**, the main cave unchanged at 168 B left.
 
 The synth machine's LFO page has a VOIC slot (`modules/synth/README.md`
 "Phase 5": 1..4, the Part's LFO page byte `+ track*24 + 2`, SPD3's storage);
-on a FLEX track whose assigned FLEX slot's sample is named SYNTH*
+on a synth track (FM SYNTH chosen in the machine list; until 2.14 also a FLEX
+track whose assigned FLEX slot's sample was named SYNTH*)
 (`qz_is_synth`, the synth page's own test, run on the UI thread at each key
 event) with VOIC 2..4 (`qz_polytrack`), the CHROMATIC handler `0x4004fb94`
 keeps every held key instead of one:
