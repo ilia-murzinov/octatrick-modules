@@ -577,42 +577,55 @@ fm_us_out:
 | a1 = the bank blob, d0 = part * 6322, d1 = the track, d2 = the part index, d4 = the
 | chosen row, a0 = blob + part * 6322 + track. The row becomes the machine byte to store
 | (fm_choose), then po_machwin (poly.s) replays the displaced `addal #0x8eda2,%a0; mvsb
-| %a0@,%d3` with its FINE rule and stock stores d4 into the Part and its shadow.
+| %a0@,%d3` with its FINE rule and stock stores d4 into the Part and its shadow. Stock
+| goes on with d0 (+ d1: the shadow's byte, 0x100a4ef0 + part * 6322 + track), d1, d2
+| (the Part's change bit), d3 (the old machine), d4 and a0 / a1: each is what it was, d4
+| the machine to store (2.15: the guard's verdict is not left in d0).
 fm_main_commit:
         move.l  %d2,-(%sp)
         move.l  %d1,-(%sp)
+        move.l  %d0,-(%sp)               | part * 6322: stock's shadow offset
         move.l  %d1,%d2                  | the track
         move.l  %d4,%d1                  | the row
-        bsr     ml_guard                 | 2.15: over a limit?
+        bsr     ml_guard                 | 2.15: over a limit? (d0 = the verdict)
         bne     fm_mc_refuse
         bsr     fm_choose
         move.l  %d1,%d4                  | the machine to store
+        move.l  (%sp)+,%d0
         move.l  (%sp)+,%d1
         move.l  (%sp)+,%d2
         jmp     po_machwin
 fm_mc_refuse:
-        addq.l  #8,%sp                   | the exit reloads what it uses
+        lea     12(%sp),%sp              | the exit reloads what it uses
         bsr     ml_toast
         jmp     WIN_REFUSE               | nothing written: the stock refusal's exit
 
 | ---- 0x4005a616 / 0x4005a850 (jmp, 6 B each): SRC SETUP's two machine-byte writes:
 | displaced `movel 0x460d5c30,%d1` (the chosen row), then stock stores d1 at a0 (the
 | machine byte) and into the shadow. d2 = the track. The second site follows
-| po_machlist's detour (0x4005a848, poly.s), which returns to it.
+| po_machlist's detour (0x4005a848, poly.s), which returns to it. Stock goes on with d0
+| (part * 6322; + d2: the shadow's byte), d1 (the machine to store), d2, d3 (the part
+| index: the Part's change bit), d4 (the old machine), a0 and a1: each is returned as it
+| came but d1 (2.15: the guard's verdict is not left in d0).
 | 2.15: a row the guard refuses leaves through SRC_REFUSE with nothing written.
 fm_src_commit:
         move.l  SRC_CURSOR,%d1           | displaced
-        bsr     ml_guard
+        move.l  %d0,-(%sp)               | part * 6322
+        bsr     ml_guard                 | (d0 = the verdict)
         bne     fm_sc_refuse
+        move.l  (%sp)+,%d0
         bsr     fm_choose
         jmp     SRC_COMMIT_RET
 fm_src_commit2:
         move.l  SRC_CURSOR,%d1           | displaced
+        move.l  %d0,-(%sp)
         bsr     ml_guard
         bne     fm_sc_refuse
+        move.l  (%sp)+,%d0
         bsr     fm_choose
         jmp     SRC_COMMIT2_RET
 fm_sc_refuse:
+        addq.l  #4,%sp                   | SRC_REFUSE reloads what it uses
         bsr     ml_toast
         jmp     SRC_REFUSE
 
