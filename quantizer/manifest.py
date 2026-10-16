@@ -8,6 +8,26 @@ in the turn direction instead of one raw unit (from 0 up in PHRYGIAN: 1, 3,
 lower) before it becomes the pitch the voice, the lock and the screen see.
 OFF is stock: every detour replays what it displaced.
 
+MIDI TRACKS, PART TWO (15 Oct 2026, Octatrick 2.15). What a MIDI track PLAYS
+follows the scale too: qz_mnote (a jmp at 0x4009fb80, the sequencer's MIDI note
+stage 0x4009f794, after TRAN, the MIDI transpose and stock's ARP SETUP KEY,
+before the active-note test and the note-on) snaps every note the stage sends --
+NOTE, the chord notes NOTE + NOT2..4, NOTE locks, TRAN, the arpeggiator's notes
+and RANGE octaves -- to the nearest note of the ROOT-rotated scale (qz_msnap, ties
+down), in place, so the note-on, the note the stage stores for its note-off and
+its active-note table agree (nothing can hang); two notes of one trig that snap
+to the same note sound once (stock's active-note test skips a note the track
+already holds). The offsets stay semitones; a chord can lose a note on a tie.
+qz_mprev (a jmp at 0x400439d6) snaps the chord a held [TRIG] key previews in GRID
+RECORDING the same way, press and release. And a per-track switch: SEQUENCER rows
+7..14, "MIDI 1 SCALE" .. "MIDI 8 SCALE", ON (default) / OFF; OFF makes that MIDI
+track stock in every path (the NOTE knob, NOTE locks, the CHROMATIC keys and their
+readout, the note stage, the preview), as SCALE OFF would. The switch is one
+battery-RAM byte, MOFF_NV 0x100b14ef (bit t = MIDI track t+1 is OFF; the last
+byte of the padding SCALE / GLIDE / ROOT use), cleared by qz_defaults and a
+storing load, saved as "#SEQUENCER_MIDI_SCALE_OFF=n" after the GLIDE line. MIDI
+IN thru and the auto channel's direct play (arpeggiator off) stay stock.
+
 MIDI TRACKS (12 Oct 2026, Octatrick 2.13). With a scale on, a MIDI track's
 NOTE knob (qz_mknob at 0x40055382, the knob handler's MIDI clamp just before
 its store 0x4005538a, which stays stock: octabam's MIDI SCENES detours that
@@ -70,7 +90,7 @@ SCALE, under CHAIN AFTER / SILENCE TRACKS / LFO AUTO CHANGE: the window is a
 generic list (state 0x460e43d8, init 0x40065c7c, draw 0x40065b14, keys
 0x40065cec, LEVEL knob 0x40065c98) over three parallel pointer tables --
 labels 0x400b27d0, getters 0x400b27dc, setters 0x400b282c -- which the
-build grows to six entries (TableGrow) and repoints. The list is created
+build grows to six entries (fourteen since 2.15: MIDI 1..8 SCALE) (TableGrow) and repoints. The list is created
 with count 3 / visible 3 (`pea 3; pea 3` at 0x40065c7c); the count becomes
 4 (poke) and the three visible rows scroll, as the firmware's longer lists
 do, once the draw loop indexes the tables from the scroll offset instead of
@@ -222,6 +242,8 @@ H = bytes.fromhex
 SCALE_NV = 0x100b14ec
 GLIDE_AT = 0x100b14ed
 ROOT_NV = 0x100b14ee
+# (2.15) the MIDI tracks whose scale is OFF, one bit a track (core.s / quantizer.s NV_MOFF).
+MOFF_NV = 0x100b14ef
 # The paraphonic key mailbox's fixed address (keys.s): 40 bytes above the GLIDE
 # byte, below the synth page cave's end (0x400d2c6c). modules/synth/poly.s
 # reads it as KEYS_AT -- keep the two constants equal.
@@ -248,7 +270,9 @@ MODULE = Module(
         "synth's glide time (OFF, 1..127; the legato switch is the synth track's LEG setting); "
         "polyphonic chromatic keys on a synth track whose VOIC is 2..4; on a synth track "
         "PTCH is semitones (-64..+63) and the CHROMATIC octave runs -4..+4; on a MIDI track "
-        "(2.13) the NOTE knob, NOTE locks and the CHROMATIC keys follow the scale and root.",
+        "(2.13) the NOTE knob, NOTE locks and the CHROMATIC keys follow the scale and root; "
+        "(2.15) so does what it plays -- chords, TRAN, the arpeggiator -- and > MIDI 1..8 SCALE "
+        "takes a MIDI track out of the scale (OFF = stock).",
     linked=(                                   # ROM link order: qzs names core.s's qz_scale_mask
         Linked("qzk", os.path.join(_HERE, "keys.s"), cpu="5475", cave_addr=KEYS_AT),
         Linked("qzc", os.path.join(_HERE, "core.s"), cpu="5475"),
@@ -265,14 +289,23 @@ MODULE = Module(
                kind="jsr", pad_to=10),
         Detour(0x40055382, H("2400" "b280" "6c02" "2401"), "qz", "qz_mknob",
                "knob handler, the MIDI tracks' branch: the clamp to the max just before the store 0x4005538a -- a MIDI "
-               "track's NOTE steps by scale degree from ROOT (2.13); the store stays stock, so MIDI SCENES' detour there composes",
+               "track's NOTE steps by scale degree from ROOT (2.13; not with its MIDI n SCALE OFF, 2.15); the store stays stock, so MIDI SCENES' detour there composes",
                kind="jsr", pad_to=8),
         Detour(0x40050b98, H("11444900" "73b9100b14cc"), "qz", "qz_mplock",
-               "MIDI p-lock editor (TRIG held): the lock store -- a NOTE lock steps by scale degree from ROOT (2.13)",
+               "MIDI p-lock editor (TRIG held): the lock store -- a NOTE lock steps by scale degree from ROOT (2.13; not with the track's MIDI n SCALE OFF, 2.15)",
                kind="jsr", pad_to=10),
         Detour(0x400436a8, H("48780001" "73b9100b14cf"), "qz", "qz_mkey",
-               "MIDI track CHROMATIC key press: the note + ROOT snapped to the nearest scale note (key 1 sounds the root); the note-on, the arp, the held note (so the note-off) and the recorder take it (2.13)",
+               "MIDI track CHROMATIC key press: the note + ROOT snapped to the nearest scale note (key 1 sounds the root); the note-on, the arp, the held note (so the note-off) and the recorder take it (2.13; not with the track's MIDI n SCALE OFF, 2.15)",
                kind="jmp", pad_to=10),
+        Detour(0x4009fb80, H("1212" "6d0001a6"), "qz", "qz_mnote",
+               "the sequencer's MIDI note stage, after TRAN and ARP SETUP KEY, before the active-note test: a note of a "
+               "following MIDI track snapped to the nearest scale note -- chords, TRAN, the arpeggiator; the note-on and "
+               "its stored note-off carry it (2.15)",
+               kind="jmp"),
+        Detour(0x400439d6, H("4aaf0028" "67000140"), "qz", "qz_mprev",
+               "GRID RECORDING, a held [TRIG] key's chord preview on a MIDI track: its four notes snapped, press and "
+               "release alike (2.15)",
+               kind="jmp", pad_to=8),
         Detour(0x4004fc58, H("45f2ac04" "71b9100b14cf"), "qz", "qz_chrom",
                "CHROMATIC trig key -> pitch: transpose the key index by ROOT (a sample track: within -12..+12 st, the other position an octave below for ROOT G..B) and snap it to the scale",
                kind="jsr", pad_to=10),
@@ -312,35 +345,38 @@ MODULE = Module(
                "SEQUENCER window draw loop: index the row tables from the scroll offset",
                kind="jmp"),
         Detour(0x400866cc, H("2c2f05c0" "202f05c4"), "qz", "qz_ld_entry",
-               "project loader entry: a storing load starts from SCALE = OFF, ROOT = C, GLIDE = OFF",
+               "project loader entry: a storing load starts from SCALE = OFF, ROOT = C, GLIDE = OFF, every MIDI track following (2.15)",
                kind="jmp", pad_to=8),
         Detour(0x400867a2, H("122f048f" "7101" "7a23"), "qz", "qz_ld_line",
-               "project loader '#' line: read #SEQUENCER_SCALE=n / #SEQUENCER_ROOT=n / #SYNTH_GLIDE=n",
+               "project loader '#' line: read #SEQUENCER_SCALE=n / #SEQUENCER_ROOT=n / #SYNTH_GLIDE=n / #SEQUENCER_MIDI_SCALE_OFF=n (2.15)",
                kind="jmp", pad_to=8),
         Detour(0x400888aa, H("73398000004f" "2f01"), "qz", "qz_wr",
-               "project writer: #SEQUENCER_SCALE=n, #SEQUENCER_ROOT=n, #SYNTH_GLIDE=n after PATTERN_CHANGE_CHAIN_BEHAVIOR",
+               "project writer: #SEQUENCER_SCALE=n, #SEQUENCER_ROOT=n, #SYNTH_GLIDE=n, #SEQUENCER_MIDI_SCALE_OFF=n (2.15) after PATTERN_CHANGE_CHAIN_BEHAVIOR",
                kind="jmp", pad_to=8),
         Detour(0x40010212, H("4a39100b14ae"), "qzc", "qz_boot",
                "boot: stock's sanitiser of the battery-RAM settings block -- SCALE/GLIDE/ROOT out of range -> OFF / C (core.s, ROM)",
                kind="jsr"),
         Detour(0x40025ac2, H("42b9100b14d4"), "qzc", "qz_defaults",
-               "project defaults (cold boot, no project, before a load, new project): SCALE/GLIDE := OFF, ROOT := C (core.s, ROM)",
+               "project defaults (cold boot, no project, before a load, new project): SCALE/GLIDE := OFF, ROOT := C, every MIDI track following (core.s, ROM)",
                kind="jsr"),
     ),
     tables=(
         TableGrow("SEQUENCER labels", old=0x400b27d0, count=3,
-                  symbols=(("qz", "qz_lbl_scale"), ("qz", "qz_lbl_root"), ("qz", "qz_lbl_glide")),
+                  symbols=(("qz", "qz_lbl_scale"), ("qz", "qz_lbl_root"), ("qz", "qz_lbl_glide"))
+                  + tuple(("qz", f"qz_lbl_m{t}") for t in range(1, 9)),
                   refs=((0x40065bd8, 0x400b27d0),)),
         TableGrow("SEQUENCER getters", old=0x400b27dc, count=3,
-                  symbols=(("qz", "qz_get"), ("qz", "qz_get_root"), ("qz", "qz_get_glide")),
+                  symbols=(("qz", "qz_get"), ("qz", "qz_get_root"), ("qz", "qz_get_glide"))
+                  + tuple(("qz", f"qz_get_m{t}") for t in range(1, 9)),
                   refs=((0x40065bde, 0x400b27dc),)),
         TableGrow("SEQUENCER setters", old=0x400b282c, count=3,
-                  symbols=(("qz", "qz_set"), ("qz", "qz_set_root"), ("qz", "qz_set_glide")),
+                  symbols=(("qz", "qz_set"), ("qz", "qz_set_root"), ("qz", "qz_set_glide"))
+                  + tuple(("qz", f"qz_set_m{t}") for t in range(1, 9)),
                   refs=((0x40065cc4, 0x400b282c), (0x40065d3e, 0x400b282c),
                         (0x40065d58, 0x400b282c), (0x40065d72, 0x400b282c))),
     ),
     pokes=(
-        Poke(0x40065c7c, expect=H("48780003"), write=H("48780006"),
-             note="SEQUENCER window: 3 -> 6 rows (SCALE, ROOT, GLIDE; 3 visible, scrolls)"),
+        Poke(0x40065c7c, expect=H("48780003"), write=H("4878000e"),
+             note="SEQUENCER window: 3 -> 14 rows (SCALE, ROOT, GLIDE, MIDI 1..8 SCALE; 3 visible, scrolls)"),
     ),
 )

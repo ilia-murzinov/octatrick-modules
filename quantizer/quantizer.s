@@ -1,5 +1,30 @@
 | SCALE QUANTIZER -- the DRAM unit (13 Sep 2026; a DRAM unit since 28 Sep 2026). GNU as.
 |
+| OCTATRICK 2.15 (15 Oct 2026): the MIDI tracks, part two.
+|   * WHAT A MIDI TRACK PLAYS follows the scale: qz_mnote, a jmp at
+|     0x4009fb80 in the sequencer's MIDI note stage (0x4009f794), after
+|     TRAN, the MIDI transpose and stock's ARP SETUP KEY, before the
+|     active-note test and the note-on. Every note the stage sends -- NOTE,
+|     NOTE + NOT2..4, NOTE locks, TRAN, the arpeggiator's notes (its RANGE
+|     octaves, fed by the sequencer, the keys or MIDI IN) -- is snapped in
+|     place to the nearest scale note (qz_msnap, ties down), so the note-on,
+|     the note stage's stored note (the note-off) and its active-note table
+|     all carry the snapped note: no note can hang. Two notes of one trig
+|     that snap to the same note sound once: stock's active-note test drops
+|     the second (the same track already holds it), so one note-on and one
+|     note-off. The offsets stay semitones. qz_mprev, a jmp at 0x400439d6,
+|     snaps the same way the chord a held [TRIG] key previews in GRID
+|     RECORDING (stock: NOTE + NOT2..4 without TRAN, its note-offs
+|     recomputed at the release).
+|   * THE PER-TRACK SWITCH: PROJECT > CONTROL > SEQUENCER rows 7..14, "MIDI
+|     1 SCALE" .. "MIDI 8 SCALE", ON (default) / OFF. A MIDI track set OFF is
+|     a track with SCALE OFF in every path -- the NOTE knob, NOTE locks, the
+|     CHROMATIC keys and their readout, the note stage, the preview. Stored
+|     as one battery-RAM byte, NV_MOFF 0x100b14ef (bit t = MIDI track t+1 is
+|     OFF; 0 = every track follows), the last byte of the padding SCALE /
+|     GLIDE / ROOT live in; saved as "#SEQUENCER_MIDI_SCALE_OFF=n" after the
+|     GLIDE line; core.s's qz_defaults clears it with the others.
+|
 | OCTATRICK 2.13 (12 Oct 2026): the MIDI tracks. With a scale on, a MIDI
 |   track's NOTE knob and NOTE locks step by scale degree from ROOT
 |   (qz_mknob, qz_mplock, qz_quant's MIDI mode) and its CHROMATIC keys play
@@ -156,6 +181,10 @@
         .global qz_get_root, qz_set_root, qz_lbl_root
         .global qz_keyidx, qz_octkey, qz_octdraw, qz_octnum
         .global qz_mknob, qz_mplock, qz_mkey
+        .global qz_mnote, qz_mprev
+        .global qz_lbl_m1, qz_lbl_m2, qz_lbl_m3, qz_lbl_m4, qz_lbl_m5, qz_lbl_m6, qz_lbl_m7, qz_lbl_m8
+        .global qz_get_m1, qz_get_m2, qz_get_m3, qz_get_m4, qz_get_m5, qz_get_m6, qz_get_m7, qz_get_m8
+        .global qz_set_m1, qz_set_m2, qz_set_m3, qz_set_m4, qz_set_m5, qz_set_m6, qz_set_m7, qz_set_m8
         .set    OCT_WORD, 0x460d16fc      | stock's CHROMATIC octave word: 0 or 1 (FUNC + LEFT/RIGHT eor it)
         .set    KEYS_AT, 0x400d2cb0       | keys.s, pinned (manifest KEYS_AT): the paraphonic key mailbox
         .set    qz_pkey, KEYS_AT          |   the live key (index + 1) per track, 8 bytes
@@ -199,6 +228,7 @@
         .set    NV_SCALE, 0x100b14ec
         .set    NV_GLIDE, 0x100b14ed
         .set    NV_ROOT,  0x100b14ee
+        .set    NV_MOFF,  0x100b14ef      | (2.15) bit t: MIDI track t+1 has the scale OFF (0 = every MIDI track follows)
         .set    qz_scale, NV_SCALE      | 0 = OFF, 1..24 = index into core.s qz_masks / qz_names
         .set    qz_glide, NV_GLIDE      | 0 = OFF, 1..127 (modules/synth GLIDE_AT: keep equal)
         .set    qz_root,  NV_ROOT       | 0..11 = C .. B (28 Sep 2026; core.s clamps and defaults it with the others)
@@ -451,6 +481,9 @@ qz_mk_capped:
         tst.l   %d5                     | slot A
         jbne    qz_mk_done
         move.l  %d1,-(%sp)
+        mvz.b   UI_TRACK,%d1            | (2.15) the track's switch: MIDI n SCALE OFF = stock
+        btst    %d1,NV_MOFF
+        jbne    qz_mk_pop
         move.l  0x16(%a3),%d1           | the slot's name: "NOTE"
         cmpi.l  #0x4e4f5445,%d1
         jbne    qz_mk_pop
@@ -478,6 +511,9 @@ qz_mplock:
         jbeq    qz_mp_store             | OFF: stock
         tst.l   MIDI_MODE
         jbeq    qz_mp_store
+        mvz.b   UI_TRACK,%d0            | (2.15) the track's switch: MIDI n SCALE OFF = stock
+        btst    %d0,NV_MOFF
+        jbne    qz_mp_store
         move.l  %a1,%d0                 | flat 0: NOTE
         jbne    qz_mp_store
         tst.l   %d5
@@ -889,6 +925,12 @@ qz_on_out:
         lea     qz_scale,%a0
         tst.b   (%a0)
         jbeq    qz_on_fmt               | SCALE OFF: stock's "%d" (ROOT ignored)
+        tst.l   MIDI_MODE               | (2.15) a MIDI track whose switch is OFF: stock's "%d"
+        jbeq    qz_on_root
+        mvz.b   UI_TRACK,%d1
+        btst    %d1,NV_MOFF
+        jbne    qz_on_fmt
+qz_on_root:
         lea     qz_ofmt(%pc),%a0        | ROOT's name, then " %d": "A -1" where stock printed "-1"
         mvz.b   NV_ROOT,%d0             | (d0 / d1 / a0 / a1 are C scratch at the site: the call follows)
         lea     qz_rootnames(%pc),%a1
@@ -927,6 +969,8 @@ qz_on_fmt:
 qz_mkey:
         mvz.b   NV_SCALE,%d0
         jbeq    qz_mky_replay           | OFF: stock
+        btst    %d4,NV_MOFF             | (2.15) d4 = the track: MIDI n SCALE OFF = stock
+        jbne    qz_mky_replay
         mvz.b   NV_ROOT,%d0
         add.l   %d3,%d0                 | + ROOT: key 1 sounds the root
         moveq   #127,%d1
@@ -992,6 +1036,81 @@ qz_ms_found:
         move.l  %d1,%d0
         movem.l (%sp),%d2-%d4
         lea     12(%sp),%sp
+        rts
+
+| ---- (2.15) WHAT A MIDI TRACK PLAYS: jmp planted at 0x4009fb80 --------------------
+| The sequencer's MIDI note stage 0x4009f794 (called from the sequencer tick
+| 0x400a1dfe, playing or stopped: the arpeggiator runs there too) builds a
+| track's four notes in its frame (fp-4..-1: NOTE, NOTE + NOT2..4 - 64, or
+| what the arpeggiator 0x40099c08 / 0x40099ee4 wrote there) and walks them
+| (0x4009fb2e, a2 = the note, d4 = 0..3, d7 = the track 0..7): + TRAN - 64 +
+| the MIDI transpose 0x46c7a124[t] (a byte out of 0..127 becomes -1),
+| stock's ARP SETUP KEY (0x4009fb58..7e), then at 0x4009fb80 -- the hook,
+| 6 bytes: move.b (a2),d1; blt.w 0x4009fd2a -- a negative note is skipped
+| and any other one goes through the active-note table 0x46c78152 (ch * 128
+| + note): a free note is sent (0x4009fbac) and stored for its note-off
+| (0x46c77a1a + 32 t + 8 i; the table entry := t * 4 + i), a note this track
+| already holds is SKIPPED (0x4009fc8c: the same or a lower track holds it),
+| a note a higher track holds is taken over. With a scale on and the
+| track's switch ON, the note is snapped in place (qz_msnap: nearest scale
+| note, ties down) before the replay, so the note-on, the stored note (the
+| note-off) and the table all carry it -- nothing can hang, whatever SCALE
+| or ROOT does later; two notes of one trig that snap to the same note:
+| the second is the skipped kind, one note-on, one note-off. Registers:
+| d0 / d1 / a0 / a1 are free here (stock loads each before it reads it),
+| d2..d4 are saved by qz_msnap; d5 / d6 / a2..a5 are not touched.
+qz_mnote:
+        tst.b   NV_SCALE
+        jbeq    qz_mn_replay            | OFF: stock
+        btst    %d7,NV_MOFF             | d7 = the track: MIDI n SCALE OFF = stock
+        jbne    qz_mn_replay
+        mvs.b   (%a2),%d0
+        jbmi    qz_mn_replay            | none / out of range: stock skips it
+        jbsr    qz_msnap
+        move.b  %d0,(%a2)               | the note, snapped (fp-4..-1: the stage's own copy)
+qz_mn_replay:
+        move.b  (%a2),%d1               | displaced
+        jblt    qz_mn_skip              | displaced: blt.w 0x4009fd2a
+        jmp     0x4009fb86
+qz_mn_skip:
+        jmp     0x4009fd2a
+
+| ---- (2.15) the chord a held [TRIG] key previews: jmp planted at 0x400439d6 ------
+| 0x400438fc(_, press) plays the UI MIDI track's step under a [TRIG] key in
+| GRID RECORDING: its four notes into 28(sp)..31(sp) (the step's NOTE lock or
+| the Part's NOTE, + the NOT2..4 locks or the Part's - 64; no TRAN, no KEY),
+| then at 0x400439d6 -- the hook, 8 bytes: tst.l 40(sp); beq.w 0x40043b1c --
+| the press sends each note that is not negative through 0x4009e9a8 (the
+| note-on, or the arpeggiator's add), the release recomputes the four the
+| same way and sends their note-offs. The snap goes on both, so the release
+| turns off what the press turned on. d0 / d1 / a0 / a1 are free (stock
+| reloads each); a2 is saved.
+qz_mprev:
+        tst.b   NV_SCALE
+        jbeq    qz_mv_replay            | OFF: stock
+        mvz.b   UI_TRACK,%d0            | the track the preview plays
+        btst    %d0,NV_MOFF
+        jbne    qz_mv_replay            | MIDI n SCALE OFF: stock
+        move.l  %a2,-(%sp)
+        lea     32(%sp),%a2             | the four notes (28(sp) before the push)
+        jbsr    qz_mv_one
+        jbsr    qz_mv_one
+        jbsr    qz_mv_one
+        jbsr    qz_mv_one
+        movea.l (%sp)+,%a2
+qz_mv_replay:
+        tst.l   40(%sp)                 | displaced: the press?
+        jbeq    qz_mv_rel               | displaced: beq.w 0x40043b1c
+        jmp     0x400439de
+qz_mv_rel:
+        jmp     0x40043b1c
+qz_mv_one:                              | (a2)+ snapped when it is a note (not negative)
+        mvs.b   (%a2),%d0
+        jbmi    qz_mv_next
+        jbsr    qz_msnap
+        move.b  %d0,(%a2)
+qz_mv_next:
+        addq.l  #1,%a2
         rts
 
 | ---- GLIDE legato: two jmp detours in the same handler --------------------------
@@ -1547,6 +1666,86 @@ qz_s_store:
         move.b  %d0,(%a0)
         rts
 
+| (2.15) rows 7..14, "MIDI 1 SCALE" .. "MIDI 8 SCALE": ON (the track follows
+| SCALE and ROOT, the default) / OFF (the track is stock, as with SCALE OFF).
+| One stub per row (d0 := the track), one getter and one setter behind them;
+| the value is bit t of NV_MOFF, set = OFF. The setter's (delta, wrap) as
+| the other rows': the LEVEL knob and the arrows step ON / OFF (clamped),
+| [YES] toggles.
+qz_get_m1:      moveq   #0,%d0
+                jbra    qz_get_m
+qz_get_m2:      moveq   #1,%d0
+                jbra    qz_get_m
+qz_get_m3:      moveq   #2,%d0
+                jbra    qz_get_m
+qz_get_m4:      moveq   #3,%d0
+                jbra    qz_get_m
+qz_get_m5:      moveq   #4,%d0
+                jbra    qz_get_m
+qz_get_m6:      moveq   #5,%d0
+                jbra    qz_get_m
+qz_get_m7:      moveq   #6,%d0
+                jbra    qz_get_m
+qz_get_m8:      moveq   #7,%d0
+qz_get_m:
+        mvz.b   NV_MOFF,%d1
+        btst    %d0,%d1
+        jbne    qz_gm_off
+        lea     qz_s_on(%pc),%a0
+        move.l  %a0,%d0
+        rts
+qz_gm_off:
+        lea     qz_n0(%pc),%a0          | "OFF"
+        move.l  %a0,%d0
+        rts
+qz_set_m1:      moveq   #0,%d0
+                jbra    qz_set_m
+qz_set_m2:      moveq   #1,%d0
+                jbra    qz_set_m
+qz_set_m3:      moveq   #2,%d0
+                jbra    qz_set_m
+qz_set_m4:      moveq   #3,%d0
+                jbra    qz_set_m
+qz_set_m5:      moveq   #4,%d0
+                jbra    qz_set_m
+qz_set_m6:      moveq   #5,%d0
+                jbra    qz_set_m
+qz_set_m7:      moveq   #6,%d0
+                jbra    qz_set_m
+qz_set_m8:      moveq   #7,%d0
+qz_set_m:                               | d0 = the track; (delta, wrap) at 4(sp) / 8(sp)
+        move.l  %d2,-(%sp)              | (8(sp) / 12(sp) now)
+        move.l  %d0,%d2
+        mvz.b   NV_MOFF,%d1
+        moveq   #0,%d0                  | the row's value: 0 = OFF ...
+        btst    %d2,%d1
+        jbne    qz_sm_add
+        moveq   #1,%d0                  | ... 1 = ON
+qz_sm_add:
+        add.l   8(%sp),%d0
+        tst.l   12(%sp)
+        jbeq    qz_sm_clamp
+        moveq   #1,%d1                  | [YES]: wrap -- a toggle
+        and.l   %d1,%d0
+        jbra    qz_sm_put
+qz_sm_clamp:
+        tst.l   %d0
+        jble    qz_sm_off
+        moveq   #1,%d0
+        jbra    qz_sm_put
+qz_sm_off:
+        moveq   #0,%d0
+qz_sm_put:
+        mvz.b   NV_MOFF,%d1
+        bclr    %d2,%d1
+        tst.l   %d0
+        jbne    qz_sm_store
+        bset    %d2,%d1                 | OFF
+qz_sm_store:
+        move.b  %d1,NV_MOFF
+        move.l  (%sp)+,%d2
+        rts
+
 | ---- the project file ------------------------------------------------------------
 | The loader 0x400866c4 reads project.work line by line; a line starting
 | with '#' is skipped at 0x400867a2 before any key is compared, on stock
@@ -1566,6 +1765,7 @@ qz_ld_entry:
         clr.b   (%a0)
         lea     qz_root,%a0
         clr.b   (%a0)
+        clr.b   NV_MOFF                 | (2.15) every MIDI track follows
 qz_e_back:
         jmp     0x400866d4
 
@@ -1587,6 +1787,10 @@ qz_ld_line:
         lea     qz_key3(%pc),%a1
         jbsr     qz_l_cmp
         jbeq     qz_l_root
+        move.l  %d3,%a0
+        lea     qz_key4(%pc),%a1
+        jbsr     qz_l_cmp
+        jbeq     qz_l_moff
         moveq   #35,%d5                 | another comment: stock skips it
         mvs.b   %d1,%d0
 qz_l_back:
@@ -1622,6 +1826,14 @@ qz_l_root:
         moveq   #0,%d0                  | out of range: C
 qz_l_rok:
         lea     qz_root,%a0
+        jbra    qz_l_store
+qz_l_moff:                              | (2.15) the MIDI tracks with the scale OFF, a mask 0..255
+        jbsr     qz_l_dec
+        cmpi.l  #255,%d0
+        jbls     qz_l_mok
+        moveq   #0,%d0                  | out of range: every track follows
+qz_l_mok:
+        lea     NV_MOFF,%a0
 qz_l_store:
         tst.l   58(%sp)                 | parse-only pass: nothing is stored
         jbne     qz_l_next
@@ -1658,6 +1870,9 @@ qz_wr:
         jbsr     qz_glide_of             | (d2 = the writer's buffer, not a track: the accessor ignores it)
         lea     qz_fmt2(%pc),%a0
         jbsr     qz_wr_line
+        mvz.b   NV_MOFF,%d0             | (2.15)
+        lea     qz_fmt4(%pc),%a0
+        jbsr     qz_wr_line
         mvs.b   0x8000004f,%d1          | displaced
         move.l  %d1,-(%sp)              | displaced
         jmp     0x400888b2
@@ -1682,6 +1897,17 @@ qz_key2:        .asciz  "#SYNTH_GLIDE="
 qz_fmt2:        .asciz  "#SYNTH_GLIDE=%d\r\n"
 qz_key3:        .asciz  "#SEQUENCER_ROOT="
 qz_fmt3:        .asciz  "#SEQUENCER_ROOT=%d\r\n"
+qz_key4:        .asciz  "#SEQUENCER_MIDI_SCALE_OFF="
+qz_fmt4:        .asciz  "#SEQUENCER_MIDI_SCALE_OFF=%d\r\n"
+qz_lbl_m1:      .asciz  "MIDI 1 SCALE"
+qz_lbl_m2:      .asciz  "MIDI 2 SCALE"
+qz_lbl_m3:      .asciz  "MIDI 3 SCALE"
+qz_lbl_m4:      .asciz  "MIDI 4 SCALE"
+qz_lbl_m5:      .asciz  "MIDI 5 SCALE"
+qz_lbl_m6:      .asciz  "MIDI 6 SCALE"
+qz_lbl_m7:      .asciz  "MIDI 7 SCALE"
+qz_lbl_m8:      .asciz  "MIDI 8 SCALE"
+qz_s_on:        .asciz  "ON"
 qz_lbl_scale:   .asciz  "SCALE"
 qz_lbl_root:    .asciz  "ROOT"
 qz_lbl_glide:   .asciz  "GLIDE"
