@@ -17,6 +17,17 @@ and adds the row; without it, SYNTH MACHINE is byte for byte the FM-only engine.
   seventh row: STATIC FLEX THRU NEIGHBOR PICKUP FM SYNTH SY DRUM; the window shows six rows and scrolls), YES.
 - **SRC SETUP**: hold FUNC and press the PLAYBACK (SRC) key, DOWN to `SY DRUM`, YES.
 
+**At most two SY DRUM tracks in a Part** (2.15): SY DRUM is drawn on the unit's main processor, and too many
+tracks of it (or of FM SYNTH) freeze the unit. Both lists refuse a third SY DRUM track (`SY DRUM: 2 MAX`), and a
+second SY DRUM track while the Part has an FM SYNTH track (`FM+SY DRUM: LIMIT`); FM SYNTH is refused while two
+tracks are SY DRUM (`FM+SY DRUM: LIMIT`). A refused choice changes nothing: the track keeps its machine and patch,
+the message pops up briefly and the list stays usable. SY DRUM chosen again on a SY DRUM track, and any stock
+machine, are always allowed. Counted in the active Part, by the tracks chosen as SY DRUM / FM SYNTH. A project
+saved by an older build with more SY DRUM tracks loads and plays as saved (so does a pasted Part or track); on it,
+a further SY DRUM choice is refused until the Part is back within the limit, and a stock machine can always be
+chosen. The numbers are provisional (to be checked with PROCESSOR LOAD on the unit) and live in
+`synth/machine_limits.inc`; details in synth/README.md, "The selection guard (2.15)".
+
 The track is stored as FLEX with `S`, `Y`, 1 in the first three bytes of its NEIGHBOR PLAYBACK column (the FM
 SYNTH mechanism; synth/README.md, "Selecting FM SYNTH from the machine list"): no sample and no marker file. The
 PLAYBACK page reads `PTCH MODE WDTH SWEP SPED DEC`, the title and footer `SY DRUM`, and both lists open on the
@@ -151,7 +162,8 @@ scene files.
 
 ## Playing it
 
-- One voice a track, any number of tracks: every SY DRUM track has its own state and patch.
+- One voice a track, at most two SY DRUM tracks in a Part (the selection guard, "Choosing it"): every SY DRUM
+  track has its own state and patch.
 - A trig recharges both envelopes; a trig on a sounding note keeps the oscillators' phase and the filter (warm).
 - LEG MONO (AMP SETUP's sixth box): a legato key recharges the envelopes when its pitch arrives, without a new START.
   SY DRUM offers LEG OFF / MONO, as a sample track does.

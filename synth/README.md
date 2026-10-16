@@ -1,5 +1,13 @@
 # Synth machine (phase 5: paraphonic chords, the engine in DRAM; phase 4: glide; phase 3: the page; phase 2: the FM voice; phase 1: the hollow voice)
 
+**Octatrick 2.15 (in preparation): a selection guard in the machine list.** FM SYNTH and SY DRUM
+run on the unit's main processor, and too many tracks of them freeze the unit. Both machine lists
+(SELECT MACHINE TYPE and SRC SETUP) now refuse a choice that would put more than **2 SY DRUM tracks**,
+more than **1 FM SYNTH track**, or **FM SYNTH together with more than 1 SY DRUM track** into the
+active Part; the track keeps its machine and the screen says why (`SY DRUM: 2 MAX`, `FM SYNTH: 1 MAX`,
+`FM+SY DRUM: LIMIT`). A project saved by an older build with more such tracks loads and plays as
+saved. Details: "The selection guard (2.15)" below.
+
 **Octatrick 2.12 (tag `v2.12`; 10 - 11 Oct 2026): the metronome no longer
 releases a held note.** With the metronome on and the sequencer playing, a held
 CHROMATIC key or chord on a synth track was released at the next click as if it
@@ -427,7 +435,7 @@ Changed from Modwerk's module: one detour at `0x40079816` does both the FINE
 rule and the commit (Modwerk dropped the FINE-0c detour); `pg_resolve` is the
 only PLAYBACK route (their second resolver detour at `0x40031e74` is not
 needed); their name hook at `0x4004c36a` is left out (`a0` is not a machine
-byte there, so it never changed a name); no refusal path; the voice start
+byte there, so it never changed a name); no refusal path of theirs (2.15 adds its own, "The selection guard"); the voice start
 tests the mark only and keeps this engine's own scan of the starting voice's
 sample (a sample lock to a real file on a marker track stays a sample); a
 marker track keeps its patch when FM SYNTH is chosen over it; the START
@@ -509,6 +517,87 @@ machine-list track (they read the same `po_is_synth` / `qz_is_synth`);
 eight machine-list tracks playing at once.
 
 ---
+
+## The selection guard (2.15)
+
+FM SYNTH and SY DRUM render their sound on the Octatrack's main processor (the ColdFire), every audio
+frame, beside the work the stock firmware does there. A few tracks of them fit; with many, the processor
+runs out of time and the unit freezes. So the machine list refuses a choice that would go past these
+limits, counted in the **active Part**:
+
+| limit | the number | the message when a choice would pass it |
+|---|---|---|
+| SY DRUM tracks | at most 2 | `SY DRUM: 2 MAX` |
+| FM SYNTH tracks | at most 1 (its VOIC setting is not limited) | `FM SYNTH: 1 MAX` |
+| SY DRUM tracks while an FM SYNTH track is in the Part | at most 1 | `FM+SY DRUM: LIMIT` |
+
+So these are refused: a third SY DRUM track; a second FM SYNTH track; FM SYNTH while two tracks are SY
+DRUM; SY DRUM on a second track while the Part has an FM SYNTH track. These are allowed: one or two SY
+DRUM tracks; one FM SYNTH track; one FM SYNTH and one SY DRUM track. The numbers are provisional: they
+will be checked against PROCESSOR LOAD readings on the unit and can change in a later version.
+
+**What counts.** The eight audio tracks of the Part being played, each by what it was chosen as in the
+machine list (the mark FM SYNTH / SY DRUM keep in the Part). The track being changed does not count as
+its old machine. A FLEX track that plays the FM voice through an `FMSYNTH*` / `SYNTH*` marker file was
+not chosen in the list and is not counted.
+
+**Always allowed:** choosing the machine a track already has (SY DRUM on a SY DRUM track, FM SYNTH on an
+FM SYNTH track: the patch is kept, as before), and choosing any stock machine (STATIC, FLEX, THRU,
+NEIGHBOR, PICKUP) on any track.
+
+**A refused choice changes nothing.** The track keeps its machine, its parameters and its mark; nothing
+is written. The message pops up in the firmware's own message box (the routine and the duration the lists
+use for their own `NOT AVAILABLE HERE!`) and is gone after a moment (under 0.7 s in the emulator); the
+list stays as it was: SELECT MACHINE TYPE and SRC SETUP stay open with the cursor on the refused row, so
+another row can be chosen at once, or NO closes the list.
+
+**Projects that already hold more load as saved.** The guard works at the moment of choosing. A project
+or a Part saved by an older build (Octatrick 2.14 and before had no limit) with, for example, three SY
+DRUM tracks loads and plays exactly as saved; no track is changed behind your back. The same holds for
+everything that is not a choice in the list: a Part reload, a Part copied and pasted, a track's settings
+pasted onto another track, a bank or Part change. On such a Part, choosing SY DRUM or FM SYNTH for
+another track is refused until the Part is within the limits again; choosing a stock machine is always
+possible, so the way back is to set the extra tracks to FLEX (or another stock machine). If a project
+like that freezes the unit, set the tracks to a stock machine before playing it.
+
+**Retuning.** The three numbers live in one file, `synth/machine_limits.inc` (`ML_FM_MAX`, `ML_SY_MAX`,
+`ML_SY_WITH_FM`); the messages print them. Every other line follows. The message box shows a short line
+only: a 17-character line was drawn, a 21-character one was not drawn at all, so keep a changed
+message near the present length.
+
+**PROCESSOR LOAD** (`processor-load/`) is unaffected: its unit is byte for byte 2.14's.
+
+### How it works
+
+`machine.s` `ml_guard` runs in the three places the lists commit a machine (`fm_main_commit` for SELECT
+MACHINE TYPE, `fm_src_commit` / `fm_src_commit2` for SRC SETUP's two paths), before `fm_choose`. It reads
+the chosen row's engine kind from the row table (`ml_rows`: 1 FM SYNTH, 2 SY DRUM; a stock row passes),
+compares it with the machine the track is marked as now (`ml_sigkind`: FLEX with a row's mark; equal
+passes), counts the marks of the other seven tracks of the current Part (the bank blob + part * 6322, as
+`fm_choose` addresses it), and checks the counts against `ml_limits`, the three bytes assembled from
+`machine_limits.inc`. A refusal calls the firmware's message routine (`0x4005a2b8`, text and duration 48,
+as the lists' own refusal of NEIGHBOR on T1 / T5 does) and leaves through the same exit as that stock
+refusal (`0x4007989c` in the machine window, `0x4005a8ba` in SRC SETUP), so the machine byte, its shadow
+and the Part's change flags are not touched. No new hook site: the guard sits in the existing detours.
+`manifest.py` reads `machine_limits.inc` into `machine.s`'s `remix.inc` only (`machine_include`).
+
+### Measured (15 Oct 2026, octabam's emulator `ot_emu`, a test build of this change; emulator results, not the unit)
+
+- **Every refusal and every allowed case, in both lists** (a card with T1 and T5 SY DRUM, the other tracks STATIC;
+  26 choices in a row, each followed by the Part's machine bytes and PLAYBACK blocks and three screen captures):
+  the ten refusals (a third SY DRUM; FM SYNTH beside two SY DRUM; a second FM SYNTH; a second SY DRUM beside FM
+  SYNTH; each in SELECT MACHINE TYPE and in SRC SETUP) left all eight tracks' bytes as they were and showed their
+  message, gone again by 0.7 s with the screen back to the list pixel for pixel; the sixteen allowed choices (SY DRUM
+  and FM SYNTH again with the patch kept, two SY DRUM, FM SYNTH alone and with one SY DRUM, and back to FLEX, STATIC,
+  THRU, NEIGHBOR, PICKUP) changed exactly the chosen track.
+- **A project saved by 2.14 with three SY DRUM tracks** (T1, T3, T5) loaded with every machine byte and PLAYBACK
+  block as saved, and the sequencer's output from the transport start was identical to 2.14's on the same card. On
+  it, SY DRUM again on T3 and T5 was allowed, a fourth SY DRUM and FM SYNTH were refused, T3 to FLEX was allowed, and
+  SY DRUM on another track was still refused with two left.
+- **Nothing else changed:** with the limits opened (the three bytes poked to 8), the machine-change walk passed its
+  21 checks with every peeked byte and screen equal to 2.14's (as it is, it stops at its own third SY DRUM track:
+  the guard refuses it); the Part / project persistence checks (17), the LIVE REC and page clear / undo / paste
+  walks, three power-off-without-SAVE walks and the seven SY DRUM reference renders came out as on 2.14.
 
 ## The machine list for more than one machine, and SY DRUM's hooks (2.11, 8 Oct 2026)
 
