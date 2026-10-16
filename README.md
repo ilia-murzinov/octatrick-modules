@@ -18,10 +18,10 @@ to watch.
   **FM SYNTH is a machine of its own in the track's machine list** (since
   2.10: FUNC + SRC, or SELECT MACHINE TYPE -- no sample or marker file
   needed; see "Selecting FM SYNTH from the machine list" in
-  [synth/README.md](synth/README.md)), and any
-  FLEX track whose sample is named FMSYNTH*.wav still becomes a synth (a silent
-  4 s marker file will do; SYNTH*.wav is still accepted; the marker never
-  ends the note -- the AMP envelope or a key release does), with its own PLAYBACK page (PTCH RATO INDX FINE
+  [synth/README.md](synth/README.md); until 2.14 a FLEX track whose sample
+  was named FMSYNTH*.wav or SYNTH*.wav also became a synth -- since 2.15 that
+  marker file is a sample like any other, and the machine list is the way in),
+  with its own PLAYBACK page (PTCH RATO INDX FINE
   FDBK DEC: PTCH in semitones, -64..+63, FINE in cents -- 0c the moment a
   track becomes a synth track), and on the LFO
   page VOIC (1 = mono, 2..4 = paraphonic: the most voices the track sounds
@@ -71,9 +71,13 @@ to watch.
   the track's machine parameters (PLAYBACK, PLAYBACK SETUP, AMP, LFO and
   their SETUP pages) to the new machine's init; step and scene locks are
   kept, as in the stock firmware; FX slots are kept. This applies to a
-  change to or from FM SYNTH or SY DRUM (either list, or a marker file);
+  change to or from FM SYNTH or SY DRUM (either list; until 2.14 also a marker file);
   a stock machine's init is a new project's; a change between stock
-  machines is stock's. `synth/README.md`.
+  machines is stock's. Since 2.15 a selection guard keeps a Part within what
+  the unit's processor can play: at most 2 SY DRUM tracks, 1 FM SYNTH track,
+  or FM SYNTH with 1 SY DRUM track -- both lists and copy / paste refuse more,
+  with a message (limits from PROCESSOR LOAD readings on the author's MKI).
+  `synth/README.md`.
 - **`sy-drum/`** (key `SY DRUM`, since 2.11; requires `SYNTH MACHINE`) -- a
   drum machine in the machine list, the row after FM SYNTH: a two-oscillator
   percussion voice with a sweep, a filter opened by the decay, six modes
@@ -83,8 +87,8 @@ to watch.
   turn while LIVE RECORDING; the locks follow copy / paste / clear / shift
   and are saved in companion files beside the project's banks
   (`sylockNN.work` / `.strd`, the author's development builds' format, so a
-  project moves between them with its locks). One voice a track, any number
-  of tracks; no sample or marker file. It runs on SYNTH MACHINE's engine (one
+  project moves between them with its locks). One voice a track, at most two
+  SY DRUM tracks in a Part (since 2.15); no sample or marker file. It runs on SYNTH MACHINE's engine (one
   DRAM unit beside it, a 2 MiB lock table in the platform reserve, 53 stock
   hooks of its own). `sy-drum/README.md`.
 - **`quantizer/`** (key `SCALE QUANTIZER`) -- a SCALE row in PROJECT >

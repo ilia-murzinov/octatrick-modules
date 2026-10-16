@@ -22,10 +22,14 @@ tracks of it (or of FM SYNTH) freeze the unit. Both lists refuse a third SY DRUM
 second SY DRUM track while the Part has an FM SYNTH track (`FM+SY DRUM: LIMIT`); FM SYNTH is refused while two
 tracks are SY DRUM (`FM+SY DRUM: LIMIT`). A refused choice changes nothing: the track keeps its machine and patch,
 the message pops up briefly and the list stays usable. SY DRUM chosen again on a SY DRUM track, and any stock
-machine, are always allowed. Counted in the active Part, by the tracks chosen as SY DRUM / FM SYNTH. A project
-saved by an older build with more SY DRUM tracks loads and plays as saved (so does a pasted Part or track); on it,
-a further SY DRUM choice is refused until the Part is back within the limit, and a stock machine can always be
-chosen. The numbers are provisional (to be checked with PROCESSOR LOAD on the unit) and live in
+machine, are always allowed. Counted in the active Part, by the tracks chosen as SY DRUM / FM SYNTH. Copy and
+paste follow the same limits: PASTE TRACK, the SRC page's paste and a Part paste (and their undo) that would make
+a third SY DRUM track are refused with the same message and paste nothing (the trigs and SY DRUM's step locks
+included); a paste that fits works as before. A project saved by an older build with more SY DRUM tracks loads and
+plays as saved; on it, a further SY DRUM choice is refused until the Part is back within the limit, a stock
+machine can always be chosen, and that Part cannot be pasted into another Part. The limits are final, set from
+PROCESSOR LOAD readings on the author's MKI (one SY DRUM track about 60 % worst block in an empty project, two
+67 - 76; each further one about 10 more, before a real project's own 10 - 15). They live in
 `synth/machine_limits.inc`; details in synth/README.md, "The selection guard (2.15)".
 
 The track is stored as FLEX with `S`, `Y`, 1 in the first three bytes of its NEIGHBOR PLAYBACK column (the FM
