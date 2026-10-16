@@ -25,8 +25,8 @@
 | po_machwin (poly.s: one detour at 0x40079816 does both jobs); the PLAYBACK page of a
 | chosen track is resolved by page.s's pg_resolve (no second resolver detour); the
 | refusal path is this repository's selection guard (2.15, below), not Modwerk's; the
-| six-row name table is filled at run time from the stock one; a track that already plays the FM voice through a
-| marker file keeps its patch when FM SYNTH is chosen over it.
+| six-row name table is filled at run time from the stock one; until 2.14 a track that played the FM voice
+| through a marker file kept its patch when FM SYNTH was chosen over it (2.15: the marker path is off).
 |
 | THE STORAGE. A chosen track is stored as FLEX (the machine byte 1, so every stock
 | FLEX path -- the PLAYBACK lanes, locks, LFOs, scenes, the DSP voice -- stays valid)
@@ -45,7 +45,7 @@
 | new machine is a row's (FM SYNTH, SY DRUM), sets the track to the new machine's init:
 | PLAYBACK and its SETUP, AMP and AMP SETUP, the three LFOs and LFO SETUP; step and scene
 | locks (SY DRUM's lock rows too) and the FX1 / FX2 slots stay (ml_reset). Through either list (fm_choose) and through
-| a marker file (poly.s: the slot assigner and the file browser, ml_became / ml_reset). A
+| the slot assigner (poly.s, ml_became; until 2.14 also a marker file, through it and the file browser). A
 | change between two stock machines is stock's (nothing written); a project, a Part
 | reload, a paste or a pattern change is no change (the bytes saved are the bytes played).
 |
@@ -58,8 +58,10 @@
 | firmware's own message popup shows why (the stock routine and duration the lists use
 | for their own NOT AVAILABLE HERE!), and the window leaves through the same exit as
 | that stock refusal, so the list works as before. Choosing a track's own machine again
-| and choosing any stock machine are always allowed. A Part that holds more (saved by an
-| older build, or made by a track paste, which is no selection) loads and plays as saved.
+| and choosing any stock machine are always allowed. Stock's copy / paste and undo are
+| guarded the same way (the paste guards below), and the 2.10 marker file selects nothing
+| since 2.15 (poly.s po_slot_marker), so a row's machine comes from a guarded write only.
+| A Part saved by an older build with more loads and plays as saved.
 |
 | The engine's side is poly.s: po_is_synth (and the quantizer's qz_is_synth) answer
 | yes for a signed track, po_fmstart starts its voice without a sample, po_fmsource
@@ -77,7 +79,7 @@
         .global ml_rows, fm_row
         .global ml_reset, ml_kindof, ml_became | 2.12: the machine change's init (poly.s: the marker route)
         .global ml_guard, ml_limits      | 2.15: the selection guard and its limits (machine_limits.inc)
-        .global fm_page_store, fm_track_paste, fm_track_undo, fm_part_paste, fm_part_undo, fm_preview | 2.15: the paste guards
+        .global fm_page_store, fm_track_undo, fm_track_paste, fm_part_undo, fm_part_paste, fm_preview | 2.15: the paste guards
         .include "remix.inc"             | 2.11: HAVE_SYDRUM and the shared equates (engine_abi.inc; manifest.py)
 
         .set    FM_ROW, 5                | the sixth row, the first after the stock five: FM SYNTH
@@ -139,11 +141,10 @@
 | machine that was on that track."). The machine the track plays before the choice (ml_ident:
 | 0 a stock machine, 1 FM -- chosen, or FLEX with a marker slot --, 2 SY DRUM) is compared
 | with the one it plays after it (the row's engine kind; a stock row: 0, or 1 for FLEX
-| whose FLEX slot holds a marker file). When they differ and either is one of the rows'
+| whose FLEX slot holds a marker file; 2.15: no slot is a marker, po_slot_marker). When they differ and either is one of the rows'
 | machines, the track gets the new machine's init (ml_reset): its PLAYBACK and PLAYBACK
 | SETUP bytes, the AMP and AMP SETUP pages, the three LFOs and LFO SETUP; the step and scene
-| locks (SY DRUM's lock rows too) and the FX1 / FX2 slots are kept. The same machine again keeps the patch (a track that
-| plays the FM voice through a marker file keeps it when FM SYNTH is chosen over it). A
+| locks (SY DRUM's lock rows too) and the FX1 / FX2 slots are kept. The same machine again keeps the patch. A
 | change between stock machines writes nothing here (stock's own behaviour: each machine
 | keeps its PLAYBACK column, every other page stays).
 fm_choose:
@@ -204,7 +205,7 @@ fm_ch_out:
         lea     36(%sp),%sp
         rts
 | ml_ident: d2 = track of the current Part -> d0 = the machine it plays: 1 FM (FM SYNTH
-| chosen, or FLEX with an FMSYNTH* / SYNTH* slot), 2 SY DRUM (chosen), 0 a stock machine;
+| chosen; until 2.14 also FLEX with an FMSYNTH* / SYNTH* slot), 2 SY DRUM (chosen), 0 a stock machine;
 | tst.l done. Preserves every other register.
 ml_ident:
         .if     HAVE_SYDRUM
@@ -787,18 +788,18 @@ ml_toast:
 | as in 2.14. A track that leaves FLEX keeps no signature, and FLEX given to a track that
 | was not FLEX does not revive one (ml_became, fm_preview): only a guarded write makes a
 | row's machine.
-        .set    CLIP_BUF, 0x460bf218     | stock's clipboard (a page, a track, a Part ...)
-        .set    UNDO_BUF, 0x460c8122     | stock's undo buffer (the same layouts)
+        .set    CLIP_BUF, 0x460c8122     | stock's clipboard: what COPY took (a page, a track, a Part ...)
+        .set    UNDO_BUF, 0x460bf218     | stock's undo buffer: what a paste replaced (the same layouts)
         .set    PAGE_STORE_RET, 0x40027ea2 | the SRC page's store (0x40027e4c, page 0), after the three loads
         .set    PAGE_STORE_NONE, 0x40028f2e | ... its "nothing stored" exit (d0 := 0)
         .set    FULL_STORE, 0x4002b654   | the whole track's store (clip, pattern, track)
-        .set    TRACK_PASTE_RET, 0x4002b96c | its paste, after the store
-        .set    TRACK_PASTE_NONE, 0x4002b980 | ... its "nothing pasted" exit (d0 := 0)
-        .set    TRACK_UNDO_RET, 0x4002b9a8 | its undo, after the store
+        .set    TRACK_PASTE_RET, 0x4002b9a8 | its paste, after the store
+        .set    TRACK_UNDO_RET, 0x4002b96c | its undo, after the store
+        .set    TRACK_UNDO_NONE, 0x4002b980 | ... the undo's "nothing restored" exit (d0 := 0)
         .set    PART_STORE, 0x40029a4c   | the Part's store (clip, part)
-        .set    PART_PASTE_RET, 0x40029b5e | its paste, after the store
-        .set    PART_PASTE_NONE, 0x40029b70 | ... its "nothing pasted" exit (d0 := 0)
-        .set    PART_UNDO_RET, 0x40029b94 | its undo, after the store
+        .set    PART_PASTE_RET, 0x40029b94 | its paste, after the store
+        .set    PART_UNDO_RET, 0x40029b5e | its undo, after the store
+        .set    PART_UNDO_NONE, 0x40029b70 | ... the undo's "nothing restored" exit (d0 := 0)
         .set    TS_MACH, 2334            | the whole track's clip: the machine byte ...
         .set    TS_SIG, 2335 + 18        | ... its 30 PLAYBACK bytes at 2335: the signature's place
         .set    PATTERN_SIZE, 36568      | a pattern in the bank blob ...
@@ -806,7 +807,7 @@ ml_toast:
         .set    PREVIEW_SAVE, 0x46105424 | the FLEX preview's saved machine
         .set    PREVIEW_RET, 0x40096d2e
 | 0x40027e98 (jmp, 10 B): the SRC page's store (d4 = the Part, d5 = the track, a2 = the
-| clip): displaced `moveb %a2@(19),%d3; mvsb %d3,%d6; moveb %a2@(18),%d7` (the machine and
+| clipboard for a paste, 0x40028fd4, or the undo buffer for an undo, 0x40028f94): displaced `moveb %a2@(19),%d3; mvsb %d3,%d6; moveb %a2@(18),%d7` (the machine and
 | its slot). FLEX pasted over a track whose signature place holds a row's signature makes
 | that machine (the signature is not written by this store): guarded.
 fm_page_store:
@@ -834,21 +835,11 @@ fm_ps_refuse:
         lea     16(%sp),%sp
         bsr     ml_toast
         jmp     PAGE_STORE_NONE
-| 0x4002b962 / 0x4002b99e (jmp, 10 B each): the whole track's paste and its undo call the
-| store: displaced `pea CLIP_BUF / UNDO_BUF; jsr %pc@(FULL_STORE)` (replayed by its
-| address); the store's other two arguments are on the stack (0(sp) the pattern, 4(sp) the
-| track).
-fm_track_paste:
-        lea     CLIP_BUF,%a1
-        bsr     ml_trackchk
-        bne     fm_tp_refuse
-        pea     (CLIP_BUF).l             | displaced
-        jsr     FULL_STORE               | displaced
-        jmp     TRACK_PASTE_RET
-fm_tp_refuse:
-        bsr     ml_toast
-        addq.l  #8,%sp                   | the store's two arguments
-        jmp     TRACK_PASTE_NONE
+| 0x4002b962 / 0x4002b99e (jmp, 10 B each): the whole track's undo (0x4002b8xx, which saved
+| d2 / d3) and its paste (0x4002b988) call the store: displaced `pea UNDO_BUF / CLIP_BUF;
+| jsr %pc@(FULL_STORE)` (replayed by its address); the store's other two arguments are on
+| the stack (0(sp) the pattern, 4(sp) the track). A refusal leaves through the function's
+| own "nothing" answer (d0 = 0).
 fm_track_undo:
         lea     UNDO_BUF,%a1
         bsr     ml_trackchk
@@ -859,7 +850,18 @@ fm_track_undo:
 fm_tu_refuse:
         bsr     ml_toast
         addq.l  #8,%sp                   | the store's two arguments
-        moveq   #0,%d0                   | nothing restored (the undo's own answer when it has nothing)
+        jmp     TRACK_UNDO_NONE
+fm_track_paste:
+        lea     CLIP_BUF,%a1
+        bsr     ml_trackchk
+        bne     fm_tp_refuse
+        pea     (CLIP_BUF).l             | displaced
+        jsr     FULL_STORE               | displaced
+        jmp     TRACK_PASTE_RET
+fm_tp_refuse:
+        bsr     ml_toast
+        addq.l  #8,%sp                   | the store's two arguments
+        moveq   #0,%d0                   | nothing pasted (the paste's own answer when the clipboard holds no track)
         rts
 | ml_trackchk: a1 = a whole track's clip, 4(sp) = the pattern, 8(sp) = the track (the
 | caller's store arguments) -> d0 = 0 when storing it is allowed, else the message; tst.l
@@ -898,9 +900,20 @@ ml_tc_out:
         lea     16(%sp),%sp
         tst.l   %d0
         rts
-| 0x40029b54 / 0x40029b8a (jmp, 10 B each): the Part's paste and its undo call the store:
-| displaced `pea CLIP_BUF / UNDO_BUF; jsr %pc@(PART_STORE)` (replayed by its address); the
+| 0x40029b54 / 0x40029b8a (jmp, 10 B each): the Part's undo and its paste call the store:
+| displaced `pea UNDO_BUF / CLIP_BUF; jsr %pc@(PART_STORE)` (replayed by its address); the
 | Part's index is on the stack. The buffer holds a whole Part from its +0.
+fm_part_undo:
+        lea     UNDO_BUF-PART_OFF,%a0
+        bsr     ml_part_over
+        bne     fm_pu_refuse
+        pea     (UNDO_BUF).l             | displaced
+        jsr     PART_STORE               | displaced
+        jmp     PART_UNDO_RET
+fm_pu_refuse:
+        bsr     ml_toast
+        addq.l  #4,%sp                   | the store's other argument
+        jmp     PART_UNDO_NONE
 fm_part_paste:
         lea     CLIP_BUF-PART_OFF,%a0
         bsr     ml_part_over
@@ -911,18 +924,7 @@ fm_part_paste:
 fm_pp_refuse:
         bsr     ml_toast
         addq.l  #4,%sp                   | the store's other argument
-        jmp     PART_PASTE_NONE
-fm_part_undo:
-        lea     UNDO_BUF-PART_OFF,%a0
-        bsr     ml_part_over
-        bne     fm_pu_refuse
-        pea     (UNDO_BUF).l             | displaced
-        jsr     PART_STORE               | displaced
-        jmp     PART_UNDO_RET
-fm_pu_refuse:
-        bsr     ml_toast
-        addq.l  #4,%sp
-        moveq   #0,%d0
+        moveq   #0,%d0                   | nothing pasted (the paste's own answer)
         rts
 | ml_part_over: a0 = a Part -> d0 = 0 when its eight tracks are within the limits, else
 | the message (as ml_guard's); tst.l done. Preserves every other register.
