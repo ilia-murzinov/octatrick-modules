@@ -614,15 +614,15 @@ after a power-off without SAVE that Part came back with its old machines and Par
 before release). So a change survives a power-off without SAVE on Parts 1 - 4 as in 2.14, and SAVE / RELOAD
 behave as before.
 
-**The message box.** The firmware's message box draws one line no wider than the screen -- 20 characters
-of an ordinary message, 19 of its widest letters (M, W) -- and nothing at all for a longer line. The
-guard's three messages are 14 - 17 characters; SY DRUM's file messages are `SY LOCKS RECOVERED` and `SY
+**The message box.** The firmware's message box draws one line no wider than the screen -- 19 letters of
+any kind; a 20th fits only when some characters are narrow (a space, punctuation, I) -- and nothing at all
+for a wider line. The guard's three messages are 14 - 17 characters; SY DRUM's file messages are `SY LOCKS RECOVERED` and `SY
 LOCK FILE ERROR` (18 each; until 2.15 the first read `LOCKS RECOVERED; SAVE TO REPAIR`, 31 characters, and
 never appeared).
 
 **Retuning.** The three numbers live in one file, `synth/machine_limits.inc` (`ML_FM_MAX`, `ML_SY_MAX`,
-`ML_SY_WITH_FM`); the messages print them. Every other line follows. Keep a changed message within the
-message box's 20 characters.
+`ML_SY_WITH_FM`); the messages print them. Every other line follows. Keep a changed message within 19
+letters (the message box's width).
 
 **PROCESSOR LOAD** (`processor-load/`) is unaffected: its unit is byte for byte 2.14's.
 
@@ -690,8 +690,9 @@ reference.
 - **A project saved by 2.14 with three SY DRUM tracks** (T1, T3, T5) loaded with every machine byte and PLAYBACK
   block as saved and played; on it, SY DRUM again on T3 and T5 was allowed, a fourth SY DRUM and FM SYNTH were
   refused, T3 to FLEX was allowed, and SY DRUM on another track was still refused with two left.
-- **The message box:** strings poked into the guard's message and shown through the same routine: 13 - 20
-  characters of ordinary text and 17 - 19 of M or W drew; 20 M, 20 W, 21 and 31 characters drew nothing. SY DRUM's
+- **The message box:** strings poked into the guard's message and shown through the same routine: 19 letters
+  of any kind drew (19 M, 19 W too); 20 letters, 20 M, 20 W, 21 and 31 characters drew nothing; a 20-character
+  line drew only with narrow characters in it (`LOCKS RECOVERED; SAV`, 20 x I). SY DRUM's
   file messages in their real path (PROJECT > CHANGE reloading a project): a bank whose `sylock01.work` was damaged
   and whose `.strd` was good showed `SY LOCKS RECOVERED` (2.14 called the routine with its 31-character line and
   nothing appeared); both files damaged showed `SY LOCK FILE ERROR` (as on 2.14).
@@ -702,9 +703,10 @@ reference.
   lock and stock lock edited before them; the seven SY DRUM reference renders matched 2.14's and the author's 2.11
   renders window for window, and the 2.14-saved three-SY-DRUM project played by the sequencer matched 2.14 on every
   channel.
-- **Not reached:** the FLEX list's sample preview (the routine the guard's preview hook sits in) was not triggered by
-  any key tried in the audio editor, the slot lists or the file browser, so that hook has run in no walk; it is
-  checked by reading only.
+- **The FLEX preview hook:** reached by holding FUNC + YES in SRC SETUP's FLEX slot list (or in the machine window's
+  slot column). On a STATIC track carrying a dormant SY DRUM mark beside two SY DRUM tracks, 2.14 turned it into a
+  third SY DRUM track while the preview was held; 2.15 previews it as a plain FLEX and clears the mark when the
+  preview stops, two SY DRUM tracks throughout.
 
 ## The machine list for more than one machine, and SY DRUM's hooks (2.11, 8 Oct 2026)
 
