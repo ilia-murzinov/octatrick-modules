@@ -23,9 +23,9 @@
 | written out here by hand; the stubs keep their hook sites and register contracts.
 | Changed for this repository: the machine window's commit shares its site with
 | po_machwin (poly.s: one detour at 0x40079816 does both jobs); the PLAYBACK page of a
-| chosen track is resolved by page.s's pg_resolve (no second resolver detour); no
-| refusal path (every track 1..8 may be FM SYNTH); the six-row name table is filled at
-| run time from the stock one; a track that already plays the FM voice through a
+| chosen track is resolved by page.s's pg_resolve (no second resolver detour); the
+| refusal path is this repository's selection guard (2.15, below), not Modwerk's; the
+| six-row name table is filled at run time from the stock one; a track that already plays the FM voice through a
 | marker file keeps its patch when FM SYNTH is chosen over it.
 |
 | THE STORAGE. A chosen track is stored as FLEX (the machine byte 1, so every stock
@@ -49,6 +49,18 @@
 | change between two stock machines is stock's (nothing written); a project, a Part
 | reload, a paste or a pattern change is no change (the bytes saved are the bytes played).
 |
+| THE SELECTION GUARD (2.15). FM SYNTH and SY DRUM render on the ColdFire, and too many
+| tracks of them freeze the unit. Both lists refuse a choice that would take the ACTIVE
+| Part past the limits of synth/machine_limits.inc (2.15: at most 2 SY DRUM tracks, at
+| most 1 FM SYNTH track, and FM SYNTH with at most 1 SY DRUM track), counted over the
+| Part's eight audio tracks by the signature each machine keeps in the Part (ml_guard).
+| A refused choice writes nothing: the track keeps its machine and its patch, the
+| firmware's own message popup shows why (the stock routine and duration the lists use
+| for their own NOT AVAILABLE HERE!), and the window leaves through the same exit as
+| that stock refusal, so the list works as before. Choosing a track's own machine again
+| and choosing any stock machine are always allowed. A Part that holds more (saved by an
+| older build, or made by a track paste, which is no selection) loads and plays as saved.
+|
 | The engine's side is poly.s: po_is_synth (and the quantizer's qz_is_synth) answer
 | yes for a signed track, po_fmstart starts its voice without a sample, po_fmsource
 | hands its source to sy_render, sy_call writes the source header stock would have;
@@ -64,6 +76,7 @@
         .global ml_clamp1, ml_clamp2, ml_clamp3, ml_clamp4, ml_clamp5
         .global ml_rows, fm_row
         .global ml_reset, ml_kindof, ml_became | 2.12: the machine change's init (poly.s: the marker route)
+        .global ml_guard, ml_limits      | 2.15: the selection guard and its limits (machine_limits.inc)
         .include "remix.inc"             | 2.11: HAVE_SYDRUM and the shared equates (engine_abi.inc; manifest.py)
 
         .set    FM_ROW, 5                | the sixth row, the first after the stock five: FM SYNTH
@@ -108,6 +121,13 @@
         .set    CUR_BOUND_IN, 0x400797cc | the machine window's cursor: the row is applied ...
         .set    CUR_BOUND_OUT, 0x4007990c | ... or not
         .set    VALIDATE_BODY, 0x40002320 | the Part validator after its prologue
+        .set    TOAST, 0x4005a2b8        | the firmware's message popup: (text, duration); both lists' own refusal calls it
+        .set    TOAST_TIME, 48           | ... with this duration (NOT AVAILABLE HERE!)
+        .set    WIN_REFUSE, 0x4007989c   | the machine window's way out after its own refusal (the stack as at the commit)
+        .set    SRC_REFUSE, 0x4005a8ba   | SRC SETUP's way out after its own refusal (both of its paths)
+        .if     (ML_FM_MAX < 1) || (ML_FM_MAX > 8) || (ML_SY_MAX < 1) || (ML_SY_MAX > 8) || (ML_SY_WITH_FM < 0) || (ML_SY_WITH_FM > 8)
+        .error  "machine_limits.inc: each limit is 1..8 (ML_SY_WITH_FM 0..8)"
+        .endif
 
 | ---- fm_choose: d1 = the chosen row, d2 = the track (the current Part) -> d1 = the
 | machine byte to store. A row of ml_rows -> FLEX, with that row's signature written into
@@ -563,24 +583,159 @@ fm_main_commit:
         move.l  %d1,-(%sp)
         move.l  %d1,%d2                  | the track
         move.l  %d4,%d1                  | the row
+        bsr     ml_guard                 | 2.15: over a limit?
+        bne     fm_mc_refuse
         bsr     fm_choose
         move.l  %d1,%d4                  | the machine to store
         move.l  (%sp)+,%d1
         move.l  (%sp)+,%d2
         jmp     po_machwin
+fm_mc_refuse:
+        addq.l  #8,%sp                   | the exit reloads what it uses
+        bsr     ml_toast
+        jmp     WIN_REFUSE               | nothing written: the stock refusal's exit
 
 | ---- 0x4005a616 / 0x4005a850 (jmp, 6 B each): SRC SETUP's two machine-byte writes:
 | displaced `movel 0x460d5c30,%d1` (the chosen row), then stock stores d1 at a0 (the
 | machine byte) and into the shadow. d2 = the track. The second site follows
 | po_machlist's detour (0x4005a848, poly.s), which returns to it.
+| 2.15: a row the guard refuses leaves through SRC_REFUSE with nothing written.
 fm_src_commit:
         move.l  SRC_CURSOR,%d1           | displaced
+        bsr     ml_guard
+        bne     fm_sc_refuse
         bsr     fm_choose
         jmp     SRC_COMMIT_RET
 fm_src_commit2:
         move.l  SRC_CURSOR,%d1           | displaced
+        bsr     ml_guard
+        bne     fm_sc_refuse
         bsr     fm_choose
         jmp     SRC_COMMIT2_RET
+fm_sc_refuse:
+        bsr     ml_toast
+        jmp     SRC_REFUSE
+
+| ---- the selection guard (2.15) ----
+| ml_guard: d1 = the chosen row, d2 = the track (the current Part) -> d0 = 0 when the
+| choice is allowed, else the message that refuses it; tst.l done. A stock row, or the row
+| of the machine the track has already, is allowed; a row's machine is refused when the
+| Part's other seven audio tracks hold (by their signatures, ml_sigkind):
+|   FM SYNTH: ML_FM_MAX FM SYNTH tracks already ("FM SYNTH: 1 TRACK MAX"), or more than
+|             ML_SY_WITH_FM SY DRUM tracks ("FM+SY DRUM: LIMIT");
+|   SY DRUM:  ML_SY_MAX SY DRUM tracks already ("SY DRUM: 2 TRACKS MAX"), or an FM SYNTH
+|             track and ML_SY_WITH_FM SY DRUM tracks ("FM+SY DRUM: LIMIT").
+| The limits are read from ml_limits. Preserves every other register.
+        .set    LIM_FM, 0                | ml_limits: the three bytes
+        .set    LIM_SY, 1
+        .set    LIM_SYFM, 2
+ml_guard:
+        lea     -24(%sp),%sp
+        movem.l %d1-%d5/%a0,(%sp)
+        move.l  %d1,%d0
+        subq.l  #FM_ROW,%d0
+        cmpi.l  #ML_COUNT,%d0
+        bcc     ml_gd_ok                 | (unsigned) a stock row: always
+        lea     ml_rows(%pc),%a0
+        movea.l (%a0,%d0.l*4),%a0
+        mvz.b   RD_KIND(%a0),%d5         | the machine chosen: 1 FM SYNTH, 2 SY DRUM
+        bsr     ml_part                  | a0 = the Part
+        move.l  %d2,%d0
+        bsr     ml_sigkind
+        cmp.l   %d5,%d0
+        beq     ml_gd_ok                 | the track's own machine again: always
+        moveq   #0,%d3                   | FM SYNTH tracks among the other seven
+        moveq   #0,%d4                   | SY DRUM tracks among them
+        moveq   #0,%d1
+ml_gd_track:
+        cmp.l   %d2,%d1
+        beq     ml_gd_next               | the track being changed
+        move.l  %d1,%d0
+        bsr     ml_sigkind
+        cmpi.l  #1,%d0
+        bne     ml_gd_sy1
+        addq.l  #1,%d3
+ml_gd_sy1:
+        cmpi.l  #2,%d0
+        bne     ml_gd_next
+        addq.l  #1,%d4
+ml_gd_next:
+        addq.l  #1,%d1
+        cmpi.l  #8,%d1
+        bne     ml_gd_track
+        lea     ml_limits(%pc),%a0
+        cmpi.l  #2,%d5
+        beq     ml_gd_sy
+        mvz.b   LIM_FM(%a0),%d0          | FM SYNTH chosen
+        cmp.l   %d0,%d3
+        bcc     ml_gd_fm                 | (unsigned) as many FM SYNTH tracks as allowed already
+        mvz.b   LIM_SYFM(%a0),%d0
+        cmp.l   %d0,%d4
+        bhi     ml_gd_both               | more SY DRUM tracks than FM SYNTH allows beside it
+        bra     ml_gd_ok
+ml_gd_sy:
+        mvz.b   LIM_SY(%a0),%d0          | SY DRUM chosen
+        cmp.l   %d0,%d4
+        bcc     ml_gd_symax              | as many SY DRUM tracks as allowed already
+        tst.l   %d3
+        beq     ml_gd_ok                 | no FM SYNTH track
+        mvz.b   LIM_SYFM(%a0),%d0
+        cmp.l   %d0,%d4
+        bcc     ml_gd_both               | as many as FM SYNTH allows beside it already
+ml_gd_ok:
+        moveq   #0,%d0
+        bra     ml_gd_out
+ml_gd_fm:
+        lea     ml_msg_fm(%pc),%a0
+        bra     ml_gd_msg
+ml_gd_symax:
+        lea     ml_msg_sy(%pc),%a0
+        bra     ml_gd_msg
+ml_gd_both:
+        lea     ml_msg_both(%pc),%a0
+ml_gd_msg:
+        move.l  %a0,%d0
+ml_gd_out:
+        movem.l (%sp),%d1-%d5/%a0
+        lea     24(%sp),%sp
+        tst.l   %d0
+        rts
+| ml_sigkind: a0 = a Part, d0 = a track -> d0 = the machine its signature names: the row's
+| engine kind (1 FM SYNTH, 2 SY DRUM) for FLEX with a row's signature, else 0; tst.l done.
+| Preserves every other register.
+ml_sigkind:
+        lea     -8(%sp),%sp
+        movem.l %d1/%a0,(%sp)
+        move.l  %d0,%d1
+        adda.l  #MACH_OFF,%a0
+        mvz.b   (%a0,%d1.l),%d0          | the track's machine byte
+        suba.l  #MACH_OFF,%a0
+        cmpi.l  #FLEX,%d0
+        bne     ml_sk_none
+        mulu.w  #30,%d1
+        adda.l  %d1,%a0
+        adda.l  #SIG_OFF,%a0             | its signature place
+        bsr     ml_sigrow
+        bmi     ml_sk_none
+        lea     ml_rows(%pc),%a0
+        movea.l (%a0,%d0.l*4),%a0
+        mvz.b   RD_KIND(%a0),%d0
+        bra     ml_sk_out
+ml_sk_none:
+        moveq   #0,%d0
+ml_sk_out:
+        movem.l (%sp),%d1/%a0
+        lea     8(%sp),%sp
+        tst.l   %d0
+        rts
+| ml_toast: d0 = a message -> the firmware's popup shows it for TOAST_TIME (the stock
+| routine; d0/d1/a0/a1 clobbered, as by any stock call).
+ml_toast:
+        pea     (TOAST_TIME).w
+        move.l  %d0,-(%sp)
+        jsr     TOAST
+        addq.l  #8,%sp
+        rts
 
 | ---- fm_type: d0 = a machine read through a0 = a pointer to it -> d0 = 5 + the row's
 | index when a0 is the current Part's machine byte of a track whose row of ml_rows is
@@ -926,6 +1081,29 @@ fm_stock_validate:
         movem.l %d2-%d7/%a2-%fp,(%sp)    | displaced
         jmp     VALIDATE_BODY
 
+| the guard's limits (machine_limits.inc), as bytes ml_guard reads: FM SYNTH, SY DRUM, SY
+| DRUM beside FM SYNTH; and its three messages, the numbers printed from the same limits
+ml_limits:
+        .byte   ML_FM_MAX, ML_SY_MAX, ML_SY_WITH_FM, 0
+ml_msg_fm:
+        .ascii  "FM SYNTH: "
+        .byte   '0' + ML_FM_MAX
+        .if     ML_FM_MAX - 1
+        .asciz  " TRACKS MAX"
+        .else
+        .asciz  " TRACK MAX"
+        .endif
+ml_msg_sy:
+        .ascii  "SY DRUM: "
+        .byte   '0' + ML_SY_MAX
+        .if     ML_SY_MAX - 1
+        .asciz  " TRACKS MAX"
+        .else
+        .asciz  " TRACK MAX"
+        .endif
+ml_msg_both:
+        .asciz  "FM+SY DRUM: LIMIT"
+        .balign 2
 fm_defaults:
         .byte   64, 12, 32, 64, 0, 40    | PLAYBACK: PTCH 0, RATO 1, INDX 32, FINE 0c, FDBK 0, DEC 40 (Modwerk's)
         .byte   0, 0, 0, 0, 0, 0         | SETUP: LOOP SLIC LEN RATE TSTR TSNS all 0 (OFF)
