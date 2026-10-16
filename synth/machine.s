@@ -621,9 +621,9 @@ fm_sc_refuse:
 | choice is allowed, else the message that refuses it; tst.l done. A stock row, or the row
 | of the machine the track has already, is allowed; a row's machine is refused when the
 | Part's other seven audio tracks hold (by their signatures, ml_sigkind):
-|   FM SYNTH: ML_FM_MAX FM SYNTH tracks already ("FM SYNTH: 1 TRACK MAX"), or more than
+|   FM SYNTH: ML_FM_MAX FM SYNTH tracks already ("FM SYNTH: 1 MAX"), or more than
 |             ML_SY_WITH_FM SY DRUM tracks ("FM+SY DRUM: LIMIT");
-|   SY DRUM:  ML_SY_MAX SY DRUM tracks already ("SY DRUM: 2 TRACKS MAX"), or an FM SYNTH
+|   SY DRUM:  ML_SY_MAX SY DRUM tracks already ("SY DRUM: 2 MAX"), or an FM SYNTH
 |             track and ML_SY_WITH_FM SY DRUM tracks ("FM+SY DRUM: LIMIT").
 | The limits are read from ml_limits. Preserves every other register.
         .set    LIM_FM, 0                | ml_limits: the three bytes
@@ -1082,25 +1082,19 @@ fm_stock_validate:
         jmp     VALIDATE_BODY
 
 | the guard's limits (machine_limits.inc), as bytes ml_guard reads: FM SYNTH, SY DRUM, SY
-| DRUM beside FM SYNTH; and its three messages, the numbers printed from the same limits
+| DRUM beside FM SYNTH; and its three messages, the numbers printed from the same limits.
+| The popup shows a short line only: 17 characters were measured on screen, 21 were not
+| drawn at all (the stock routine draws nothing for a line wider than its box).
 ml_limits:
         .byte   ML_FM_MAX, ML_SY_MAX, ML_SY_WITH_FM, 0
 ml_msg_fm:
         .ascii  "FM SYNTH: "
         .byte   '0' + ML_FM_MAX
-        .if     ML_FM_MAX - 1
-        .asciz  " TRACKS MAX"
-        .else
-        .asciz  " TRACK MAX"
-        .endif
+        .asciz  " MAX"
 ml_msg_sy:
         .ascii  "SY DRUM: "
         .byte   '0' + ML_SY_MAX
-        .if     ML_SY_MAX - 1
-        .asciz  " TRACKS MAX"
-        .else
-        .asciz  " TRACK MAX"
-        .endif
+        .asciz  " MAX"
 ml_msg_both:
         .asciz  "FM+SY DRUM: LIMIT"
         .balign 2
