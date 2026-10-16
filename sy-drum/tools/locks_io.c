@@ -124,8 +124,11 @@ static s32 path_for(char *dst,const char *base,u32 bank,u32 stored) {
     s=stored?".strd":".work";while(*s)dst[n++]=*s++;
     dst[n]=0;return 0;
 }
+/* The firmware's popup draws one line as wide as the screen at most -- 19 characters of its widest
+   letters (M, W), 20 of an ordinary message -- and nothing at all for a longer one (measured in the
+   emulator, 2.15; until then the 31-character "LOCKS RECOVERED; SAVE TO REPAIR" never showed). */
 void sl_io_ui_warning(s32 value) {
-    sl_io_toast(value==1?"LOCKS RECOVERED; SAVE TO REPAIR":"SY LOCK FILE ERROR",48);
+    sl_io_toast(value==1?"SY LOCKS RECOVERED":"SY LOCK FILE ERROR",48);
 }
 static void note(s32 error,u32 recovered) {
     sl_io_last_error=error;

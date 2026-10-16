@@ -1,11 +1,11 @@
 | GENERATED from tools/locks_io.c (with tools/scenes_io.h, tools/gjlocks_io.h); do not edit.
 | Run python3 sy-drum/tools/gen_locks_io.py (m68k-elf-gcc on PATH)
-| Source SHA256 (the .c, scenes_io.h, gjlocks_io.h) 2742a73afe23913929afa9caa5741a63ebad2b838a1fde3e909b1eeb2da1ed5e
+| Source SHA256 (the .c, scenes_io.h, gjlocks_io.h) 28acf6009f1467ffe0e93e5631c3054ac3a9ef6e4e76b7e7a9e6600025267a90
 #NO_APP
 	.text
 	.section	.rodata.str1.1,"aMS",@progbits,1
 .LC0:
-	.string	"LOCKS RECOVERED; SAVE TO REPAIR"
+	.string	"SY LOCKS RECOVERED"
 .LC1:
 	.string	"SY LOCK FILE ERROR"
 	.text

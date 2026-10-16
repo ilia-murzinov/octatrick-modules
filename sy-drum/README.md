@@ -139,9 +139,12 @@ duplication of a page, and the erase of a step in GRID RECORDING or LIVE RECORDI
 - the stock bank files keep their format. Keep the companion files with the project when copying or backing it up
   on a computer.
 
-Recovery: a damaged WORK file with a good STRD loads the saved locks and shows `LOCKS RECOVERED; SAVE TO REPAIR` (the
-damaged file is rewritten only by an explicit SAVE); a file this module cannot read, or one of a later format, is
-preserved and that bank's locks are disabled with `SY LOCK FILE ERROR`; every other project feature keeps working.
+Recovery: a damaged WORK file with a good STRD loads the saved locks and shows `SY LOCKS RECOVERED` (the
+damaged file is rewritten only by an explicit SAVE: save the project to repair it); a file this module cannot read,
+or one of a later format, is preserved and that bank's locks are disabled with `SY LOCK FILE ERROR`; every other
+project feature keeps working. (Until 2.15 the first message read `LOCKS RECOVERED; SAVE TO REPAIR`: 31 characters,
+too long for the firmware's message box, which draws nothing for a line wider than the screen -- 20 characters at
+most, 19 of the widest letters -- so it never appeared.)
 Writes are checked; the stock files and the companion files are separate writes, so a save is not one atomic step
 across a power loss.
 
@@ -263,8 +266,8 @@ Part SAVE / RELOAD leaves the step locks alone. The file I/O
 (`tools/locks_io.c`) was also run on the Mac against an in-memory card: 31 cases -- no file without locks, exactly
 the locked banks' pairs, cold load, removing the last lock, RELOAD, SAVE TO NEW and a new project over a folder with
 stale files, a development-build project (sixteen pairs, `syscen`, `sylkgj`) loaded, saved, EXPORTed and DELETEd,
-a version 1 file, a later version (blocked, preserved, `SY LOCK FILE ERROR`), a damaged WORK (`LOCKS RECOVERED; SAVE
-TO REPAIR`, repaired by SAVE), RELOAD with the development build's scene files. One finding on the way: without
+a version 1 file, a later version (blocked, preserved, `SY LOCK FILE ERROR`), a damaged WORK (the recovered
+message, then `LOCKS RECOVERED; SAVE TO REPAIR`, repaired by SAVE), RELOAD with the development build's scene files. One finding on the way: without
 the development build's RELOAD step for its scene files (`syscenNN`), a RELOAD on an emulated card whose files had
 been saved in place failed in the stock loader ('PARSE ERROR'); with it -- the development build's own sequence --
 the same card reloads (why the step matters to the stock loader was not established). EXPORT and DELETE ran on
