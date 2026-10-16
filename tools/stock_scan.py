@@ -158,7 +158,7 @@ def remix_variants(path: pathlib.Path):
     """2.11: a unit that includes "remix.inc" (octabam writes it per remix from the
     manifest's Linked.include) is assembled once per flag setting, with the file this
     repository's manifests build: HAVE_SYDRUM 0 and 1 (the SY DRUM call-outs) and
-    synth/engine_abi.inc; sy-drum's unit (two passes) also gets its engine and its step
+    synth/engine_abi.inc (machine.s: and synth/machine_limits.inc); sy-drum's unit (two passes) also gets its engine and its step
     locks (the .inc.s files are only ever assembled inside that unit). Without it
     the assembly would fail and the stronger check be skipped. [None] when the unit
     includes nothing."""
@@ -171,7 +171,10 @@ def remix_variants(path: pathlib.Path):
         locks = [(path.parent / f"{n}.inc.s").read_text() for n in sydrum_locks(path.parent)]
         return ["\n".join((".ifndef SD_PASS1", ".set SD_PASS1, 1", ".set HAVE_SYDRUM, 1", abi,
                            ".else", engine, *locks, ".endif"))]
-    return [f".set HAVE_SYDRUM, {f}\n" + abi for f in (0, 1)]
+    # 2.15: machine.s's remix.inc also carries the selection guard's limits (synth/manifest.py
+    # machine_include)
+    limits = (REPO / "synth" / "machine_limits.inc").read_text() if path == REPO / "synth" / "machine.s" else ""
+    return [f".set HAVE_SYDRUM, {f}\n" + abi + limits for f in (0, 1)]
 
 
 def blob_asm(path: pathlib.Path, inc=None):
