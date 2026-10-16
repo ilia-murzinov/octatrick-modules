@@ -305,11 +305,11 @@ hardware figures, and nothing here ran on a unit):
   in one trig sent once: C#3, D3, E3 in PENT.MN F# -> C#3, E3).
 - **MIDI 1 SCALE OFF:** the same 14 patterns under the three scales (42
   captures) equal 2.14's and SCALE OFF's. **SCALE OFF** equals 2.14 in
-  all 14. Of these
-  56 captures 41 are equal byte for byte and 15 equal once the running
-  status bytes the UART driver re-sends on a timer are set aside (a few
-  instructions more per note move the moment it fires; the notes, their
-  order and every data byte are the same).
+  all 14. Most of these 56 captures are equal byte for byte (41 and 45 in
+  two runs of the same image), the rest once the running-status byte the
+  MIDI driver re-sends on a timer is set aside: where that byte lands moves
+  with timing, between two runs of one image too; the notes, their order
+  and every data byte are the same.
 - **Two tracks at once** (track 1 on channel 1, track 2 on channel 2, each
   with its own chord): both following, either one OFF, both OFF, under
   MINOR A (and PENT.MN F#): an OFF track's channel equals 2.14, a following
