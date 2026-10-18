@@ -219,7 +219,7 @@ there, the held-chord crackle and the live-key pops gone, by ear; the tuner
 (UP + TEMPO) works there too (29 Sep 2026). The last two 2.9 fixes (a sequencer trig on a sounding note, the index ramp) are
 emulator-verified and not yet flashed; so is FM SYNTH in the machine list
 (2.10, 8 Oct 2026). 2.15 (the selection guard, the MIDI tracks' scale)
-is emulator-verified and not yet on a unit. Every feature was verified in an
+was flashed on the author's MKI (18 Oct 2026) and works there. Every feature was verified in an
 emulator before flashing (the companion repository
 [timhastie/octa-panel](https://github.com/timhastie/octa-panel) has a
 real-time build of octabam's emulator and a virtual front panel). Read
@@ -279,8 +279,8 @@ builds on the author's unit and were never tagged.
   row tables (3 + 11 entries) and one poke, TUNER 3, PROCESSOR LOAD 4 and
   one poke, DIRECT JUMP its cave; the stock instructions every detour and
   poke displaces were checked against OS 1.40C (144 sites, 136 at 2.14).
-  TUNER, DIRECT JUMP and PROCESSOR LOAD are 2.14's. Emulator-verified,
-  not yet on a unit.
+  TUNER, DIRECT JUMP and PROCESSOR LOAD are 2.14's. Flashed and in use
+  on the author's MKI (18 Oct 2026).
 - 2.14 (tag `v2.14`, 12 Oct 2026): SY DRUM ONLY -- ITS STEP LOCKS SURVIVE
   A POWER-OFF WITHOUT SAVE. From the author's test of SY DRUM on his MKI:
   PLAYBACK SETUP locks (LSPD LDEP WAVE S&H) edited while the pattern
