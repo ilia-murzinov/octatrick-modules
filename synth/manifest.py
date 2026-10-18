@@ -564,7 +564,7 @@ RESOLVER_STOCK = bytes.fromhex("20300c00" "6002")
 # names from the machine table and the LFO names from the stock descriptor
 # itself, not through the page resolver; the audio edit 0x400392cc walks all 30
 # destinations. On a synth track the names become the FM SYNTH page's and the
-# VOIC / CHRD clone's, and the edit steps over SPD3 / DEP3 (VOIC / CHRD).
+# VOIC / CHRD clone's; VOIC and CHRD stay in the list (LFO 1 / LFO 2 destinations).
 LFD_NAME_HOOK = 0x4003bff2               # `lea 0x400d5f38,%a0; bras 0x4003c054` (page 0: the machine table)
 LFD_NAME_STOCK = bytes.fromhex("41f9400d5f38" "605a")
 LFD_LFO_HOOK = 0x4003bffa                # `lea 0x400d37f6,%a2; bras 0x4003c058` (page 1: the LFO descriptor)
@@ -664,6 +664,7 @@ MODULE = Module(
         "shapes and effects it as a sample. Its PLAYBACK page reads RATO/INDX/"
         "FDBK/DEC with icons and the title FM SYNTH; PTCH is semitones (-64..+63) "
         "and RATE is FINE (cents) on a synth track, 0c the moment a track becomes one. "
+        "LFO 1/2 can assign VOIC and CHRD (VOIC 0..127 maps to 1..4; LFO 3 muted). "
         "A FLEX or STATIC sample track with LEG MONO and GLIDE slides its pitch (2.8).",
     linked=(
         Linked("poly", os.path.join(_HERE, "poly.s"), cpu="5475", dram=True, include=remix_include),
@@ -701,7 +702,7 @@ MODULE = Module(
                "LFO SETUP PMTR formatter, LFO names: the VOIC / CHRD clone on a synth track (a stored SPD3 / DEP3 prints VOIC / CHRD); every other track stock",
                kind="jmp", pad_to=8),
         Detour(LFD_EDIT_HOOK, LFD_EDIT_STOCK, "poly", "po_lfdedit",
-               "LFO SETUP PMTR edit (audio tracks): stock's display-order walk, one shown destination a detent, stepping over SPD3 / DEP3 (VOIC / CHRD) on a synth track; the Part byte or the lock as stock stores it",
+               "LFO SETUP PMTR edit (audio tracks): stock's display-order walk, one shown destination a detent (VOIC / CHRD stay on a synth track for LFO 1 / LFO 2); the Part byte or the lock as stock stores it",
                kind="jmp", pad_to=8),
         Detour(MIDI_MAP_HOOK, MIDI_MAP_STOCK, "poly", "po_mon",
                "MIDI IN note-on (the STANDARD map's chromatic block): a synth track's PTCH raw is note - 20 (semitones, 84 = 0), stored before the START, and the note is posted to the engine as a key of its own",

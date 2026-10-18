@@ -11,6 +11,15 @@ pass a limit), and **the `FMSYNTH*` / `SYNTH*` marker file no longer makes a FLE
 plays as a sample; choose FM SYNTH in the machine list instead. A project saved by an older build with
 more such tracks loads and plays as saved. Details: "The selection guard (2.15)" below.
 
+**After 2.12: LFO 1 / LFO 2 assign VOIC and CHRD.** LFO SETUP's PMTR on a
+synth track offers `VOIC` and `CHRD` again (2.10 had stepped over them).
+LFO 1 or LFO 2 on either modulates the ColdFire page-1 record (dest `<12`,
+base `0x80000510 + ping·0x180 + 48·t`). CHRD and VOIC both read that post-LFO
+byte (`po_lfo_page1`). VOIC’s knob is count 128 (0..127, shown as 1..4 via
+`1+(b>>5)`) so max-depth LFO sweeps the same full domain as CHRD — a count-4
+dest only ever hit the rails (VOIC 1 and 4). LFO 3 stays muted (`po_lfo3`).
+Details: "The LFO destination list (2.10)" below.
+
 **Octatrick 2.12 (tag `v2.12`; 10 - 11 Oct 2026): the metronome no longer
 releases a held note.** With the metronome on and the sequencer playing, a held
 CHROMATIC key or chord on a synth track was released at the next click as if it
@@ -81,10 +90,11 @@ one period of the note it replaces late (from a C1: up to 31 ms; from a C3:
 
 **2.10 also (6 Oct 2026): the LFO destination list speaks FM.** On a synth
 track LFO SETUP's PMTR lists the FM SYNTH page's own names -- `PTCH RATO INDX
-FINE FDBK DEC`, then AMP, then `SPD1 SPD2 DEP1 DEP2`, then FX1 and FX2 -- where
-it printed the Flex names (`STRT LEN RATE RTRG RTIM`) and offered `SPD3` /
-`DEP3`, which are VOIC and CHRD on a synth track: the knob steps over those
-two. Every other track's list is unchanged. Details: "The LFO destination list
+FINE FDBK DEC`, then AMP, then `SPD1 SPD2 VOIC DEP1 DEP2 CHRD`, then FX1 and
+FX2 -- where it printed the Flex names (`STRT LEN RATE RTRG RTIM`) and
+`SPD3` / `DEP3`. VOIC and CHRD are destinations of LFO 1 and LFO 2 (latched
+at the next note start; LFO 3 stays muted -- those slots are the knobs).
+Every other track's list is unchanged. Details: "The LFO destination list
 (2.10)" below.
 
 **2.10 also (6 Oct 2026): a held key is the gate.** A CHROMATIC key held on a
@@ -1833,17 +1843,16 @@ Flex names. The audio edit `0x400392cc` walks the 30 entries in display order
   synth track, the stock FLEX one on a sample track) unless the resolver
   answers the master track's descriptor or 0.
 - `po_lfdlfo` at `0x4003bffa`: the LFO page's names from the resolver when it
-  answers our VOIC / CHRD clone (`po_lfodesc`), else stock. So a destination
-  stored before 2.10 (or by a scene or a lock) at SPD3 / DEP3 prints `VOIC` /
-  `CHRD`, what it addresses on a synth track.
+  answers our VOIC / CHRD clone (`po_lfodesc`), else stock. So SPD3 / DEP3
+  print `VOIC` / `CHRD`, what LFO 1 or LFO 2 addresses on a synth track.
 - `po_lfdedit` at `0x400392cc`: stock's walk (the position tables `0x400a72a8`
   / `0x400a7280`, the encoder `0x4003249c`, the clamp 0..29) with one SHOWN
   entry a detent in the turn's direction, stepping over the track's hidden
-  mask: `0x900` (values 8 = SPD3 / VOIC and 11 = DEP3 / CHRD) when the
-  resolver gives the track's LFO page as our clone, else none. At an end with
-  nothing shown beyond, it stays; a stored hidden value is left on the first
-  turn for the next shown entry that way; a stored value outside 0..29 starts
-  from the end. PMTR stays the stock Part byte, written by stock's store.
+  mask: none on FM SYNTH (`LFD_HIDE_FM = 0`; was `0x900` hiding VOIC / CHRD
+  so LFO 1 / LFO 2 could not assign them), else none on every other track.
+  At an end with nothing shown beyond, it stays; a stored value outside
+  0..29 starts from the end. PMTR stays the stock Part byte, written by
+  stock's store.
 - `po_lfopage` (the resolver's LFO descriptor, a hook since phase 5): its FLEX
   test compares the low byte of d5 only (the resolver loads the machine with
   `moveb`, so a caller whose d5 was negative failed the long compare and got
@@ -1853,14 +1862,14 @@ Flex names. The audio edit `0x400392cc` walks the 30 entries in display order
 change on the pinned ot_emu: LFO SETUP screenshots per detent, the
 Part byte read from the bank blob):
 - FM track, LFO 1, forward from PTCH: `PTCH RATO INDX FINE FDBK DEC`, `ATK HOLD
-  REL VOL BAL <F>`, `SPD1 SPD2 DEP1 DEP2`, six FILTER, six DELAY, then it stays
-  on the last; backward the same list reversed, staying on PTCH.
+  REL VOL BAL <F>`, `SPD1 SPD2 VOIC DEP1 DEP2 CHRD`, six FILTER, six DELAY,
+  then it stays on the last; backward the same list reversed, staying on PTCH.
 - A stored 8 prints `LFO VOIC` (Part byte 8); forward -> `DEP1` (9), back from
-  there `SPD2` (7) `SPD1` (6) `AMP <F>` (17). A stored 11 prints `LFO CHRD`;
-  forward -> FX1's first (18), back `DEP2` (10) `DEP1` (9) `SPD2` (7). A
-  stored hidden value drives what it always drove (LFO 3's speed / depth,
-  whose depth `po_lfo3` holds at 0 on a synth track): a render with LFO 1 on
-  VOIC at DEP 127 equals the DEP 0 control in level step for step.
+  there `VOIC` (8) `SPD2` (7) `SPD1` (6) `AMP <F>` (17). A stored 11 prints
+  `LFO CHRD`; forward -> FX1's first (18), back `DEP2` (10) `DEP1` (9)
+  `VOIC` (8). LFO 1 or LFO 2 on VOIC / CHRD writes the live lane those knobs
+  use (next note start latches the voice count / chord shape; LFO 3's own
+  depth stays 0 via `po_lfo3`).
 - An LFO on a renamed entry works: LFO 1 on INDX (DEP 127, a C4 note, RATO 1,
   DEC HOLD) moves the share of energy above 1.5 f0 between 0.04 and 1.0 (mean
   0.38, its main variation 0.35 Hz); the DEP 0 control stays 0.50..0.51

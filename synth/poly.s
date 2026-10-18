@@ -194,9 +194,12 @@
         .set    FPS_DEFAULT, 345         | 120 BPM, 1x: 60 / 120 / 4 s * 44100 / 16
         .set    SCALE_AT, 0x400d2ca8     | modules/quantizer/scale.s: `jmp qz_scale_mask` -- d0 := the scale's pitch-class mask, 0 = OFF
         .set    CV_CHRD, 11              | flat slot 11 = LFO page slot 5 (DEP3): the chord shape
-        .set    CV_VOIC, 8               | flat slot 8 = LFO page slot 2 (SPD3): the voice count, 1..4
+        .set    CV_VOIC, 8               | flat slot 8 = LFO page slot 2 (SPD3): voice count store 0..127 -> 1..4
         .set    CV_REL, 14               | flat slot 14 = AMP page slot 2 (REL)
         .set    LFO_STATE, 0x80004858    | the LFO engine's per-track state, 8 B a track (a4 in its loop)
+        .set    PAGE_REC, 0x80000510     | ColdFire page-1 record (LFO a2): + ping·0x180 + 48·t
+        .set    PAGE_REC_STRIDE, 48
+        .set    PAGE_REC_PING, 0x180     | LFO.md: a2 = 0x80000510 + ping·0x180 + 48·t
         .set    LFO_P, 0x400d37f6        | the stock LFO page descriptor (P form), 0x192 bytes
         .set    LFO_DESC_LEN, 0x192
         .set    RESOLVER_RET, 0x40031ed6
@@ -463,10 +466,8 @@ sy_warm:                                 | (sy_env_ramp, 5.8 ms), the carrier an
         bra     sy_warm_mono
 sy_warm_voic:
         .endif
-        move.l  #CV_STRIDE,%d1           | VOIC (the current value, locks applied) 2..4: this note
-        muls.l  %d2,%d1                  | is paraphonic; 1, or anything outside 1..4: the mono voice
-        lea     CURVALS,%a0
-        mvz.b   CV_VOIC(%a0,%d1.l),%d1
+        bsr     po_voic_count            | VOIC 1..4 from post-LFO page byte (0..127)
+        move.l  %d0,%d1
         subq.l  #2,%d1
         cmpi.l  #2,%d1
         sls     %d1
@@ -942,10 +943,8 @@ po_lk_out:
 | another pitch than the sounding one: the word now (sy_word) at least half a semitone from
 | S_CUR's. a3 = the track record, a4 = fp, d2 = track. Clobbers d0, d1, d6, a0.
 po_xfq:
-        move.l  #CV_STRIDE,%d1
-        muls.l  %d2,%d1
-        lea     CURVALS,%a0
-        mvz.b   CV_VOIC(%a0,%d1.l),%d1
+        bsr     po_voic_count            | same VOIC latch as sy_warm / po_st_chord
+        move.l  %d0,%d1
         subq.l  #2,%d1
         cmpi.l  #2,%d1
         bls     po_xq_no                 | VOIC 2..4: paraphonic (po_start's own rule)
@@ -2204,10 +2203,8 @@ po_st_1a:
 | less than half a step ago adopts that voice (V_KEY := K, no HOLD gate), so
 | the note sustains while the key is held and releases with it. A shape
 | (chord memory), VOIC 1 (the mono path) and every other START: as before.
-        move.l  #CV_STRIDE,%d0
-        muls.l  %d2,%d0
-        lea     CURVALS,%a0
-        mvz.b   CV_CHRD(%a0,%d0.l),%d0
+        moveq   #CV_CHRD,%d0             | CHRD from page record (post-LFO)
+        bsr     po_lfo_page1
         lsr.l   #2,%d0
         bne     po_st_go                 | a shape: chord memory decides
         bsr     po_voices_of             | a6 = the voices, a2 = their end (clobbers d0)
@@ -2285,17 +2282,10 @@ po_st_chord:
         jsr     SCALE_AT                 | ... its pitch-class mask, 0 = OFF (clobbers d0, a0)
 po_st_ns:
         move.l  %d0,T_SCALE(%a5)
-        move.l  #CV_STRIDE,%d0
-        muls.l  %d2,%d0
-        lea     CURVALS,%a0
-        mvz.b   CV_VOIC(%a0,%d0.l),%d6   | VOIC: the track's voice cap, locks applied (2..4 here:
-        subq.l  #1,%d6                   | the note started paraphonic on this byte; a byte outside
-        cmpi.l  #3,%d6                   | 1..4 reads 1)
-        bls     po_st_v1
-        moveq   #0,%d6
-po_st_v1:
-        addq.l  #1,%d6
-        mvz.b   CV_CHRD(%a0,%d0.l),%d0   | the chord byte, locks applied: shape << 2 | inversion (26 Sep 2026)
+        bsr     po_voic_count            | VOIC 1..4 (post-LFO page byte, same domain as CHRD)
+        move.l  %d0,%d6                   | n = VOIC
+        moveq   #CV_CHRD,%d0             | CHRD still from page record (post-LFO)
+        bsr     po_lfo_page1
         move.l  %d0,%d3
         lsr.l   #2,%d3                   | the shape, 0..31 (0 = "----")
         beq     po_st_row0
@@ -2616,17 +2606,11 @@ po_ho_fold1:
         bne     po_ho_fold
         move.l  T_W(%a5),%d1
         move.l  %d1,T_REF(%a5)           | the targets are the roots from here
-        move.l  #CV_STRIDE,%d0
-        muls.l  %d2,%d0
-        lea     CURVALS,%a0
-        mvz.b   CV_CHRD(%a0,%d0.l),%d3   | the chord byte, locks applied: shape << 2 | inversion
-        mvz.b   CV_VOIC(%a0,%d0.l),%d6   | VOIC 1..4 (as po_st_v1)
-        subq.l  #1,%d6
-        cmpi.l  #3,%d6
-        bls     po_ho_v1
-        moveq   #0,%d6
-po_ho_v1:
-        addq.l  #1,%d6                   | n
+        moveq   #CV_CHRD,%d0             | page record (post-LFO)
+        bsr     po_lfo_page1
+        move.l  %d0,%d3
+        bsr     po_voic_count
+        move.l  %d0,%d6                   | n
         move.l  %d3,%d0
         lsr.l   #2,%d0                   | the shape
         beq     po_ho_single
@@ -2786,9 +2770,14 @@ po_legmode:
         add.l   %d1,%d1
         add.l   %d0,%d1                  | track * 24
         adda.l  #LFO_PAGE_OFF,%a0
-        mvz.b   2(%a0,%d1.l),%d3         | VOIC
+        mvz.b   2(%a0,%d1.l),%d3         | VOIC (0..127 store -> 1..4)
         mvz.b   5(%a0,%d1.l),%d4         | CHRD (shape << 2 | inversion)
         suba.l  #LFO_PAGE_OFF,%a0
+        move.l  %d0,-(%sp)
+        move.l  %d3,%d0
+        bsr     po_voic_clamp
+        move.l  %d0,%d3
+        move.l  (%sp)+,%d0
         move.l  %d2,%d1
         lsl.l   #5,%d1
         sub.l   %d2,%d1
@@ -3213,15 +3202,13 @@ po_lp_copy:
         lea     po_voic(%pc),%a0         | ... slot 2 (SPD3, LFO 3 being muted here) named VOIC ...
         move.l  (%a0)+,0x16+12(%a1)
         move.w  (%a0),0x16+16(%a1)
-        lea     po_fmt_voic(%pc),%a0     | ... printing 1..4 ...
-        move.l  %a0,0xca+8(%a1)
-        moveq   #1,%d4                   | ... range 1..4, default 1 (the knob clamps to them;
-        move.l  %d4,0x6a+8(%a1)          | a Part's stock byte 32 reads as 1 until turned) ...
-        move.b  %d4,0x5e+2(%a1)
-        moveq   #4,%d4
+        lea     po_fmt_voic(%pc),%a0     | ... printing 1..4 from a 0..127 store (same as CHRD's
+        move.l  %a0,0xca+8(%a1)          | full-range LFO byte: 0..31->1 .. 96..127->4) ...
+        moveq   #0,%d4                   | ... range 0..127, default 0 (= VOIC 1). Stock SPD3
+        move.l  %d4,0x6a+8(%a1)          | handlers kept (not the enum stepper): LFO sweeps the
+        move.b  %d4,0x5e+2(%a1)          | same 0..127 domain CHRD uses. Part byte 32 -> VOIC 1
+        move.l  #128,%d4                 | in po_voic_clamp.
         move.l  %d4,0x9a+8(%a1)
-        clr.l   0x12a+8(%a1)             | ... the stock enum stepper (handler 0, as PMTR/WAVE: one
-                                         | step a detent; the accumulator handlers scale by the range) ...
         move.l  0x18e(%a1),%d4           | ... both always shown (nibbles 2 and 5, bit 2)
         andi.l  #0xff0ff0ff,%d4
         ori.l   #0x00500500,%d4
@@ -3240,8 +3227,10 @@ po_lp_done:
 | table 0x400d5f38 itself and the LFO page's from the stock descriptor -- not through the
 | page resolver page.s and po_lfopage hook -- so a synth track listed STRT LEN RATE RTRG
 | RTIM and SPD3 / DEP3. The list now reads PTCH RATO INDX FINE FDBK DEC | ATK HOLD REL VOL
-| BAL | SPD1 SPD2 DEP1 DEP2 | FX1 | FX2 on a synth track: VOIC / CHRD (the bytes of SPD3 /
-| DEP3 there: a voice count and a chord shape, no destinations) are stepped over. The stock edit 0x400392cc walks the 30 entries in display
+| BAL | SPD1 SPD2 VOIC DEP1 DEP2 CHRD | FX1 | FX2 on a synth track: VOIC / CHRD (the
+| bytes of SPD3 / DEP3 there) are destinations of LFO 1 and LFO 2, as every other LFO-page
+| slot. LFO 3 stays muted (po_lfo3: its depth reads 0) -- those slots are the knobs, not an
+| LFO. The stock edit 0x400392cc walks the 30 entries in display
 | order (PLAYBACK AMP LFO FX1 FX2: stock's tables 0x400a72a8 value -> position, 0x400a7280
 | back) with no gaps. Nothing is stored differently: PMTR stays the stock Part byte.
         .set    LFD_RESOLVER, 0x40031da4 | the page resolver (track, page kind) -> descriptor
@@ -3253,7 +3242,7 @@ po_lp_done:
         .set    LFD_V2P, 0x400a72a8      | page -> display page
         .set    LFD_P2V, 0x400a7280      | display page -> page
         .set    LFD_LAST, 29             | the last stock destination (FX2 slot 6)
-        .set    LFD_HIDE_FM, 0x900       | bits 8 and 11, FM SYNTH: SPD3 (VOIC) and DEP3 (CHRD)
+        .set    LFD_HIDE_FM, 0           | no destinations hidden on FM SYNTH (was 0x900: VOIC / CHRD; LFO 1/2 assign them)
 
 | po_lfdname: 0x4003bff2 (jmp, 8 B), `lea 0x400d5f38,%a0; bras 0x4003c054` (then
 | a2 = tbl[machine]). d0 = the machine byte, d1 = the track, d2 = the slot (kept), a4 =
@@ -3279,9 +3268,9 @@ po_ln_out:
 
 | po_lfdlfo: 0x4003bffa (jmp, 8 B), `lea 0x400d37f6,%a2; bras 0x4003c058`: the LFO page's
 | names (page kind 1). d1 = the track, d2 = the slot (kept), a4 = buf. On a synth track
-| the page resolver hands its LFO page our VOIC / CHRD clone (po_lfopage): a value the
-| edit no longer offers (SPD3 / DEP3, stored before 2.10 or by a lock) prints as VOIC /
-| CHRD, what it drives there. Every other track: the stock descriptor.
+| the page resolver hands its LFO page our VOIC / CHRD clone (po_lfopage): SPD3 / DEP3
+| print as VOIC / CHRD, what LFO 1 or LFO 2 drives there. Every other track: the stock
+| descriptor.
 po_lfdlfo:
         lea     LFO_P,%a2                | displaced: the stock pick
         moveq   #1,%d0
@@ -3299,9 +3288,9 @@ po_lo_out:
 | po_lfdedit: 0x400392cc (jmp, 8 B), the audio PMTR edit after its two branches (d3 = the
 | stored value, d5 = the encoder argument; d0-d2, d7, a0, a1 scratch as in the stock code
 | it replaces). Stock's walk -- position, encoder steps, clamp to 0..29, back to a value --
-| with the destinations hidden on this track stepped over in both directions. A hidden
-| value already stored keeps working and prints as VOIC / CHRD (po_lfdlfo); the first turn
-| leaves it for the next shown entry that way. At an end with nothing shown beyond, it stays.
+| with the destinations hidden on this track stepped over in both directions (none on FM
+| SYNTH: VOIC and CHRD stay in the list for LFO 1 / LFO 2). At an end with nothing shown
+| beyond, it stays.
 po_lfdedit:
         lea     -8(%sp),%sp
         movem.l %d4/%d6,(%sp)
@@ -3368,7 +3357,8 @@ po_le_map:
 
 | po_ld_hidden -> d0 = the destinations hidden on the UI track (bit v = PMTR value v):
 | an FM SYNTH track -- the resolver hands its LFO page our VOIC / CHRD clone -- hides
-| SPD3 and DEP3; every other track hides nothing. Clobbers d1, a0, a1.
+| nothing (LFD_HIDE_FM = 0: VOIC and CHRD are LFO 1 / LFO 2 destinations); every other
+| track hides nothing. Clobbers d1, a0, a1.
 po_ld_hidden:
         moveq   #1,%d0
         move.l  %d0,-(%sp)               | page kind 1: LFO
@@ -3385,16 +3375,71 @@ po_lh_none:
         moveq   #0,%d0
         rts
 
-| ---- po_fmt_voic: fmt(buf, value) -> "1".."4" (a byte outside 1..4 reads 1, as the engine reads it) --
+| ---- po_page1_base: d2 = track -> a0 = page-1 record for the current ping --------
+| LFO.md: a2 = 0x80000510 + ping·0x180 + 48·t. SO omitted ping, so PMTR/DEP were
+| read from the idle bank and po_voic_count always fell through to the railed
+| page byte (only VOIC 1 and 4 at max DEP). Clobbers d1.
+po_page1_base:
+        move.l  PING_AT,%d1
+        andi.l  #1,%d1
+        move.l  #PAGE_REC_PING,%d0
+        mulu.l  %d1,%d0                  | ping · 0x180
+        move.l  #PAGE_REC_STRIDE,%d1
+        muls.l  %d2,%d1                  | 48 · track
+        add.l   %d1,%d0
+        lea     PAGE_REC,%a0
+        adda.l  %d0,%a0
+        rts
+
+| ---- po_lfo_page1: d2 = track, d0 = flat slot 0..11 -> d0 = post-LFO page-1 byte --
+| Stock LFO dest < 12 stores into the ping's PAGE_REC, not CURVALS. High byte of
+| the halfword; mask 0x7f (LFO dirty low byte). Clobbers d1, a0.
+po_lfo_page1:
+        move.l  %d0,-(%sp)               | flat slot
+        bsr     po_page1_base
+        move.l  (%sp)+,%d0
+        add.l   %d0,%d0                  | flat -> halfword offset
+        mvz.w   (%a0,%d0.l),%d0
+        lsr.l   #8,%d0
+        andi.l  #0x7f,%d0
+        rts
+
+| ---- po_voic_count: d2 = track -> d0 = VOIC 1..4 ------------------------------------
+| Same path as CHRD: post-LFO page byte (0..127), then po_voic_clamp. The VOIC
+| knob is count 128 (0..127) so LFO shares CHRD's full domain -- not a count-4
+| dest that max DEP rails to ~0/~127 (only two voice counts). Clobbers d1, a0.
+po_voic_count:
+        moveq   #CV_VOIC,%d0
+        bsr     po_lfo_page1
+        | fall through
+| ---- po_voic_clamp: d0 = raw VOIC byte -> d0 in 1..4 --------------------------------
+| Legacy / lock bytes 1..4 kept. Else scale 0..127 like CHRD's domain:
+| 0..31->1, 32..63->2, 64..95->3, 96..127->4 (stock SPD3 default 32 -> mono).
+| Clobbers nothing else.
+po_voic_clamp:
+        cmpi.l  #1,%d0
+        blt     po_vc_scale              | 0
+        cmpi.l  #4,%d0
+        bls     po_vc_done               | legacy Part / lock still 1..4
+po_vc_scale:
+        cmpi.l  #127,%d0
+        bls     po_vc_cap
+        moveq   #127,%d0
+po_vc_cap:
+        cmpi.l  #32,%d0                  | stock SPD3 default -> mono
+        bne     po_vc_quart
+        moveq   #1,%d0
+        rts
+po_vc_quart:
+        lsr.l   #5,%d0                   | 0..3
+        addq.l  #1,%d0                   | 1..4
+po_vc_done:
+        rts
+
+| ---- po_fmt_voic: fmt(buf, value) -> "1".."4" (same map as po_voic_clamp) --
 po_fmt_voic:
         move.l  8(%sp),%d0
-        subq.l  #1,%d0
-        cmpi.l  #3,%d0
-        bls     po_fv1
-        moveq   #0,%d0
-po_fv1:
-        addq.l  #1,%d0
-po_fv2:
+        bsr     po_voic_clamp
         move.l  %d0,-(%sp)
         pea     po_f_d(%pc)
         move.l  12(%sp),-(%sp)           | buf
@@ -3419,7 +3464,8 @@ po_fmt_chord:
         move.l  %d0,%d1
         add.l   %d1,%d0
         add.l   %d1,%d0                  | ... * 3 = track * 24
-        mvz.b   2(%a0,%d0.l),%d0         | its VOIC
+        mvz.b   2(%a0,%d0.l),%d0         | its VOIC (0..127 -> 1..4)
+        bsr     po_voic_clamp
         subq.l  #2,%d0
         cmpi.l  #2,%d0                   | 2..4: the shape
         bls     po_fc_shape
@@ -4066,7 +4112,12 @@ po_keyrec:
         move.l  %d0,%d1
         add.l   %d1,%d0
         add.l   %d1,%d0                  | track * 24
-        mvz.b   2(%a0,%d0.l),%d1         | VOIC
+        mvz.b   2(%a0,%d0.l),%d1         | VOIC (0..127 -> 1..4)
+        move.l  %d0,-(%sp)
+        move.l  %d1,%d0
+        bsr     po_voic_clamp
+        move.l  %d0,%d1
+        move.l  (%sp)+,%d0
         subq.l  #2,%d1
         cmpi.l  #2,%d1
         bhi     po_kr_out                | 1 (or out of range): the mono synth, stock recording
@@ -4078,7 +4129,7 @@ po_keyrec:
         move.l  %d2,%d0
         lsl.l   #5,%d0
         adda.l  %d0,%a3                  | a3 = the track's chord record
-        move.b  %d1,CR_VOIC(%a3)         | the Part's VOIC: the VOIC lock's ceiling
+        move.b  %d1,CR_VOIC(%a3)         | the Part's VOIC: the VOIC lock's ceiling (1..4)
         lea     po_clock(%pc),%a4
         move.l  CK_FRAMES(%a4),%d7       | now
         bsr     po_kr_settle             | a provisional join older than KR_CONF stands
@@ -4667,7 +4718,8 @@ po_polytrack:
         move.l  %d1,%d0
         add.l   %d1,%d1
         add.l   %d0,%d1                  | track * 24
-        mvz.b   2(%a0,%d1.l),%d0         | VOIC
+        mvz.b   2(%a0,%d1.l),%d0         | VOIC (0..127 -> 1..4)
+        bsr     po_voic_clamp
         subq.l  #2,%d0
         cmpi.l  #2,%d0
         bls     po_pt_yes

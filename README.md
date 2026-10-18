@@ -400,8 +400,9 @@ builds on the author's unit and were never tagged.
   stolen voice fades over a period, and a chord-memory or stolen voice that
   must move UP fades out first and starts its note cold (that note starts up
   to one period of the old note late). LFO SETUP's destination list on a synth track names
-  the FM SYNTH page's parameters (PTCH RATO INDX FINE FDBK DEC ...) and
-  steps over SPD3 / DEP3 (VOIC / CHRD). A held CHROMATIC key sustains and
+  the FM SYNTH page's parameters (PTCH RATO INDX FINE FDBK DEC ...) and offers
+  VOIC / CHRD as destinations of LFO 1 and LFO 2 (LFO 3 stays muted). A held
+  CHROMATIC key sustains and
   releases at the key-up; HOLD gates sequencer trigs only. The fixes, after
   the author's test of the first 2.10 build on his MKI: a note restarted
   while it still sounds (a quick re-press, a trig on its own tail) no longer
